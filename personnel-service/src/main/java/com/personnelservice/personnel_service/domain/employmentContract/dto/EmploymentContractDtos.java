@@ -25,6 +25,9 @@ public final class EmploymentContractDtos {
     ) {
     }
 
+    public record TerminationRequest(@NotNull LocalDate terminationDate) {
+    }
+
     public record Response(
         UUID id,
         UUID employeeId,
