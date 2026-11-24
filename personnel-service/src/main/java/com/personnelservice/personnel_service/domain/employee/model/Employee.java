@@ -31,4 +31,7 @@ public class Employee {
 
     @Column(nullable = false, length = 254)
     private String email;
+
+    @Column(nullable = false)
+    private boolean active = true;
 }

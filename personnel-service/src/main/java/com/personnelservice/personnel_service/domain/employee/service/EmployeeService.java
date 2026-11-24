@@ -30,7 +30,7 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeDtos.Response create(@NotNull @Valid EmployeeDtos.Request request) {
-        Employee employee = new Employee(null, request.cpf(), request.name(), request.email());
+        Employee employee = new Employee(null, request.cpf(), request.name(), request.email(), true);
         try {
             return EmployeeDtos.Response.from(employeeRepository.saveAndFlush(employee));
         } catch (DataIntegrityViolationException exception) {
@@ -46,15 +46,28 @@ public class EmployeeService {
 
     @Transactional(readOnly = true)
     public Page<EmployeeDtos.Response> list(Pageable pageable) {
-        return employeeRepository.findAll(pageable).map(EmployeeDtos.Response::from);
+        return employeeRepository.findByActiveTrue(pageable).map(EmployeeDtos.Response::from);
     }
 
     @Transactional
     public EmployeeDtos.Response update(UUID id, @NotNull @Valid EmployeeDtos.UpdateRequest request) {
-        Employee employee = requireEmployee(id);
+        Employee employee = lockEmployee(id);
+        if (!employee.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Inactive records cannot be updated.");
+        }
         employee.setName(request.name());
         employee.setEmail(request.email());
         return EmployeeDtos.Response.from(employee);
+    }
+
+    @Transactional
+    public void deactivate(UUID id) {
+        lockEmployee(id).setActive(false);
+    }
+
+    private Employee lockEmployee(UUID id) {
+        return employeeRepository.findLockedById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Record not found."));
     }
 
     @Transactional(readOnly = true)

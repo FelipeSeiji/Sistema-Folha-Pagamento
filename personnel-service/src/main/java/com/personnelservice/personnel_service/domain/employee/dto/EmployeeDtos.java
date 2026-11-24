@@ -26,9 +26,9 @@ public final class EmployeeDtos {
     ) {
     }
 
-    public record Response(UUID id, String cpf, String name, String email) {
+    public record Response(UUID id, String cpf, String name, String email, boolean active) {
         public static Response from(Employee employee) {
-            return new Response(employee.getId(), employee.getCpf(), employee.getName(), employee.getEmail());
+            return new Response(employee.getId(), employee.getCpf(), employee.getName(), employee.getEmail(), employee.isActive());
         }
     }
 }
