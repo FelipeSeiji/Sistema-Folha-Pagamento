@@ -2,6 +2,7 @@ package com.personnelservice.personnel_service.domain.company.model;
 
 import java.util.UUID;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
@@ -25,4 +26,7 @@ public class Company {
     private String cnpj;
 
     private String legalName;
+
+    @Column(nullable = false)
+    private boolean active = true;
 }

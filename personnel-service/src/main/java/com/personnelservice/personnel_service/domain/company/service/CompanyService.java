@@ -30,7 +30,7 @@ public class CompanyService {
 
     @Transactional
     public CompanyDtos.Response create(@NotNull @Valid CompanyDtos.Request request) {
-        Company company = new Company(null, request.cnpj(), request.legalName());
+        Company company = new Company(null, request.cnpj(), request.legalName(), true);
         try {
             return CompanyDtos.Response.from(companyRepository.saveAndFlush(company));
         } catch (DataIntegrityViolationException exception) {
@@ -46,14 +46,27 @@ public class CompanyService {
 
     @Transactional(readOnly = true)
     public Page<CompanyDtos.Response> list(Pageable pageable) {
-        return companyRepository.findAll(pageable).map(CompanyDtos.Response::from);
+        return companyRepository.findByActiveTrue(pageable).map(CompanyDtos.Response::from);
     }
 
     @Transactional
     public CompanyDtos.Response update(UUID id, @NotNull @Valid CompanyDtos.UpdateRequest request) {
-        Company company = requireCompany(id);
+        Company company = lockCompany(id);
+        if (!company.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Inactive records cannot be updated.");
+        }
         company.setLegalName(request.legalName());
         return CompanyDtos.Response.from(company);
+    }
+
+    @Transactional
+    public void deactivate(UUID id) {
+        lockCompany(id).setActive(false);
+    }
+
+    private Company lockCompany(UUID id) {
+        return companyRepository.findLockedById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Record not found."));
     }
 
     @Transactional(readOnly = true)

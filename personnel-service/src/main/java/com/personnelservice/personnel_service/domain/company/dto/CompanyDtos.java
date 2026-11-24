@@ -37,9 +37,9 @@ public final class CompanyDtos {
         }
     }
 
-    public record Response(UUID id, String cnpj, String legalName) {
+    public record Response(UUID id, String cnpj, String legalName, boolean active) {
         public static Response from(Company company) {
-            return new Response(company.getId(), company.getCnpj(), company.getLegalName());
+            return new Response(company.getId(), company.getCnpj(), company.getLegalName(), company.isActive());
         }
     }
 }
