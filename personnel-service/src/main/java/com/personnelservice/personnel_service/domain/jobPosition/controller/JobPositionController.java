@@ -3,6 +3,9 @@ package com.personnelservice.personnel_service.domain.jobPosition.controller;
 import java.net.URI;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +36,13 @@ public class JobPositionController {
             .toUri();
 
         return ResponseEntity.created(location).body(jobPosition);
+    }
+
+    @GetMapping
+    public PagedModel<JobPositionDtos.Response> list(
+        @PageableDefault(size = 20, sort = "id") Pageable pageable
+    ) {
+        return new PagedModel<>(jobPositionService.list(pageable));
     }
 
     @GetMapping("/{id}")
