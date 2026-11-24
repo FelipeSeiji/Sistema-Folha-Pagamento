@@ -1,0 +1,77 @@
+package com.personnelservice.personnel_service.domain.jobPosition.controller;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class JobPositionIntegrationTests {
+    @LocalServerPort
+    private int port;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Test
+    void registersAndReadsPosition() throws Exception {
+        UUID position = null;
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            assertThat(post(client, "/job-position", """
+                {"name":""}
+                """).statusCode()).isEqualTo(400);
+            var created = post(client, "/job-position", """
+                {"name":"Reviewer","description":"Test position"}
+                """);
+            assertThat(created.statusCode()).isEqualTo(201);
+            URI location = URI.create(created.headers().firstValue("Location").orElseThrow());
+            position = UUID.fromString(location.getPath().substring(location.getPath().lastIndexOf('/') + 1));
+            verifyCreatedAndReadable(client, created, "/job-position", "Reviewer");
+        } finally {
+            if (position != null) {
+                jdbc.update("DELETE FROM tb_job_position WHERE id = ?", position);
+            }
+        }
+    }
+
+    private UUID verifyCreatedAndReadable(HttpClient client, HttpResponse<String> created, String path, String value)
+            throws Exception {
+        assertThat(created.statusCode()).isEqualTo(201);
+        URI location = URI.create(created.headers().firstValue("Location").orElseThrow());
+        UUID id = UUID.fromString(location.getPath().substring(location.getPath().lastIndexOf('/') + 1));
+        assertThat(location).isEqualTo(uri(path + "/" + id));
+        assertThat(created.body()).contains(id.toString(), value);
+
+        var found = client.send(HttpRequest.newBuilder(location).timeout(Duration.ofSeconds(10)).build(),
+            HttpResponse.BodyHandlers.ofString());
+        assertThat(found.statusCode()).isEqualTo(200);
+        assertThat(found.body()).isEqualTo(created.body());
+
+        var missing = client.send(HttpRequest.newBuilder(uri(path + "/" + UUID.randomUUID()))
+            .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.discarding());
+        assertThat(missing.statusCode()).isEqualTo(404);
+        return id;
+    }
+
+    private HttpResponse<String> post(HttpClient client, String path, String body) throws Exception {
+        var request = HttpRequest.newBuilder(uri(path)).timeout(Duration.ofSeconds(10))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private URI uri(String path) {
+        return URI.create("http://127.0.0.1:" + port + path);
+    }
+}
