@@ -9,6 +9,8 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.UUID;
 
+import com.jayway.jsonpath.JsonPath;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,6 +39,14 @@ class JobPositionIntegrationTests {
             URI location = URI.create(created.headers().firstValue("Location").orElseThrow());
             position = UUID.fromString(location.getPath().substring(location.getPath().lastIndexOf('/') + 1));
             verifyCreatedAndReadable(client, created, "/job-position", "Reviewer");
+            URI pageUri = URI.create("http://127.0.0.1:" + port + "/job-position?page=0&size=1");
+            var page = client.send(HttpRequest.newBuilder(pageUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(page.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.number")).isZero();
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.size")).isEqualTo(1);
+            assertThat(JsonPath.<Integer>read(page.body(), "$.content.length()")).isEqualTo(1);
+
         } finally {
             if (position != null) {
                 jdbc.update("DELETE FROM tb_job_position WHERE id = ?", position);
