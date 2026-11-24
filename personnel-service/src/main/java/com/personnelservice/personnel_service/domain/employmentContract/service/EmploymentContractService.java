@@ -35,16 +35,20 @@ public class EmploymentContractService {
 
     @Transactional
     public EmploymentContractDtos.Response create(@NotNull @Valid EmploymentContractDtos.Request request) {
-        var employee = employeeRepository.findById(request.employeeId())
+        var employee = employeeRepository.findLockedById(request.employeeId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found."));
-        var company = companyRepository.findById(request.companyId())
+        var company = companyRepository.findLockedById(request.companyId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found."));
-        var department = departmentRepository.findById(request.departmentId())
+        var department = departmentRepository.findLockedById(request.departmentId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found."));
-        var position = jobPositionRepository.findById(request.positionId())
+        var position = jobPositionRepository.findLockedById(request.positionId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job position not found."));
         if (!company.getId().equals(department.getCompany().getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Department does not belong to the company.");
+        }
+
+        if (!employee.isActive() || !company.isActive() || !department.isActive() || !position.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Employment contract requires active records.");
         }
 
         EmploymentContract entity = new EmploymentContract();
