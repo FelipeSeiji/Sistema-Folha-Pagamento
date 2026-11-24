@@ -35,6 +35,14 @@ public class EmploymentContractController {
         return ResponseEntity.created(location).body(employmentContract);
     }
 
+    @PostMapping("/{id}/termination")
+    public EmploymentContractDtos.Response terminate(
+        @PathVariable("id") UUID id,
+        @Valid @RequestBody EmploymentContractDtos.TerminationRequest request
+    ) {
+        return employmentContractService.terminate(id, request);
+    }
+
     @GetMapping("/{id}")
     public EmploymentContractDtos.Response findById(@PathVariable("id") UUID id) {
         return employmentContractService.findById(id);
