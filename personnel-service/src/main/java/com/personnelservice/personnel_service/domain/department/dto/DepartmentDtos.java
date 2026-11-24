@@ -2,6 +2,8 @@ package com.personnelservice.personnel_service.domain.department.dto;
 
 import java.util.UUID;
 
+import com.personnelservice.personnel_service.domain.department.model.Department;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -18,5 +20,8 @@ public final class DepartmentDtos {
     }
 
     public record Response(UUID id, String name, UUID companyId) {
+        public static Response from(Department department) {
+            return new Response(department.getId(), department.getName(), department.getCompany().getId());
+        }
     }
 }
