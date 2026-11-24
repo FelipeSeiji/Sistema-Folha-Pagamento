@@ -19,6 +19,9 @@ public final class DepartmentDtos {
     ) {
     }
 
+    public record UpdateRequest(@NotBlank @Size(max = 100) String name) {
+    }
+
     public record Response(UUID id, String name, UUID companyId) {
         public static Response from(Department department) {
             return new Response(department.getId(), department.getName(), department.getCompany().getId());
