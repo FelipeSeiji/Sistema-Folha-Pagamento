@@ -53,9 +53,32 @@ class EmploymentContractIntegrationTests {
                 contractRequest.formatted(UUID.randomUUID(), company, department, position)).statusCode()).isEqualTo(404);
             var createdContract = post(client, "/employment-contract",
                 contractRequest.formatted(employee, company, department, position));
-            verifyCreatedAndReadable(client, createdContract, "/employment-contract", employee.toString());
+            UUID contract = verifyCreatedAndReadable(client, createdContract, "/employment-contract", employee.toString());
 
+
+            String endpoint = "/employment-contract/" + contract + "/termination";
+            assertThat(post(client, endpoint, """
+                {"terminationDate":"2025-12-31"}
+                """).statusCode()).isEqualTo(400);
+            jdbc.update("""
+                INSERT INTO tb_salary_history (id, employment_contract_id, effective_from, salary)
+                VALUES (?, ?, DATE '2026-01-01', 5000)
+                """, UUID.randomUUID(), contract);
+            String termination = """
+                {"terminationDate":"2026-03-31"}
+                """;
+            var ended = post(client, endpoint, termination);
+            assertThat(ended.statusCode()).isEqualTo(200);
+            assertThat(ended.body()).contains("2026-03-31");
+            assertThat(post(client, endpoint, termination).statusCode()).isEqualTo(409);
+            assertThat(jdbc.queryForObject("""
+                SELECT effective_until FROM tb_salary_history WHERE employment_contract_id = ?
+                """, java.time.LocalDate.class, contract)).isEqualTo(java.time.LocalDate.parse("2026-03-31"));
         } finally {
+            jdbc.update("""
+                DELETE FROM tb_salary_history
+                WHERE employment_contract_id IN (SELECT id FROM tb_employment_contract WHERE employee_id = ?)
+                """, employee);
             jdbc.update("""
                 DELETE FROM tb_salary_history
                 WHERE employment_contract_id IN (SELECT id FROM tb_employment_contract WHERE employee_id = ?)
