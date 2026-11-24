@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -45,6 +46,14 @@ public class DepartmentController {
         @PageableDefault(size = 20, sort = "id") Pageable pageable
     ) {
         return new PagedModel<>(departmentService.list(companyId, pageable));
+    }
+
+    @PutMapping("/{id}")
+    public DepartmentDtos.Response update(
+        @PathVariable("id") UUID id,
+        @Valid @RequestBody DepartmentDtos.UpdateRequest request
+    ) {
+        return departmentService.update(id, request);
     }
 
     @GetMapping("/{id}")
