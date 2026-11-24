@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -51,6 +52,26 @@ class CompanyIntegrationTests {
             assertThat(JsonPath.<Integer>read(page.body(), "$.content.length()")).isEqualTo(1);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tb_company WHERE cnpj = ?", Long.class, cnpj))
                 .isEqualTo(1L);
+
+            UUID companyId = jdbc.queryForObject("SELECT id FROM tb_company WHERE cnpj = ?", UUID.class, cnpj);
+            URI updateUri = URI.create("http://127.0.0.1:" + port + "/company/" + companyId);
+            String updatedPayload = """
+                {"legalName":"Updated Company"}
+                """;
+            var updated = put(client, updateUri, updatedPayload);
+            assertThat(updated.statusCode()).isEqualTo(200);
+            assertThat(updated.body()).contains("Updated Company", cnpj);
+
+            assertThat(put(client, updateUri, """
+                {"legalName":" "}
+                """).statusCode()).isEqualTo(400);
+            URI missingUpdateUri = URI.create("http://127.0.0.1:" + port + "/company/" + UUID.randomUUID());
+            assertThat(put(client, missingUpdateUri, updatedPayload).statusCode()).isEqualTo(404);
+
+            var persisted = client.send(HttpRequest.newBuilder(updateUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(persisted.statusCode()).isEqualTo(200);
+            assertThat(persisted.body()).isEqualTo(updated.body());
         } finally {
             jdbc.update("DELETE FROM tb_company WHERE cnpj = ?", cnpj);
         }
@@ -63,5 +84,13 @@ class CompanyIntegrationTests {
             .POST(HttpRequest.BodyPublishers.ofString(
                 "{\"cnpj\":\"" + cnpj + "\",\"legalName\":\"Concurrency test\"}"))
             .build();
+    }
+
+    private HttpResponse<String> put(HttpClient client, URI uri, String body) throws Exception {
+        var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10))
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }
