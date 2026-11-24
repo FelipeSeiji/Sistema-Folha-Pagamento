@@ -49,10 +49,20 @@ public class CompanyService {
         return companyRepository.findAll(pageable).map(CompanyDtos.Response::from);
     }
 
+    @Transactional
+    public CompanyDtos.Response update(UUID id, @NotNull @Valid CompanyDtos.UpdateRequest request) {
+        Company company = requireCompany(id);
+        company.setLegalName(request.legalName());
+        return CompanyDtos.Response.from(company);
+    }
+
     @Transactional(readOnly = true)
     public CompanyDtos.Response findById(UUID id) {
+        return CompanyDtos.Response.from(requireCompany(id));
+    }
+
+    private Company requireCompany(UUID id) {
         return companyRepository.findById(id)
-            .map(CompanyDtos.Response::from)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found."));
     }
 }
