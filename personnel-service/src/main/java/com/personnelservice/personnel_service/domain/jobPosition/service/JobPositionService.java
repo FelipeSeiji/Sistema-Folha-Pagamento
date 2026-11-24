@@ -2,6 +2,8 @@ package com.personnelservice.personnel_service.domain.jobPosition.service;
 
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,11 @@ public class JobPositionService {
     public JobPositionDtos.Response create(@NotNull @Valid JobPositionDtos.Request request) {
         JobPosition entity = new JobPosition(null, request.name(), request.description());
         return JobPositionDtos.Response.from(jobPositionRepository.save(entity));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<JobPositionDtos.Response> list(Pageable pageable) {
+        return jobPositionRepository.findAll(pageable).map(JobPositionDtos.Response::from);
     }
 
     @Transactional(readOnly = true)
