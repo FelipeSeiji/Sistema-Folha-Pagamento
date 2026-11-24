@@ -22,9 +22,9 @@ public final class DepartmentDtos {
     public record UpdateRequest(@NotBlank @Size(max = 100) String name) {
     }
 
-    public record Response(UUID id, String name, UUID companyId) {
+    public record Response(UUID id, String name, UUID companyId, boolean active) {
         public static Response from(Department department) {
-            return new Response(department.getId(), department.getName(), department.getCompany().getId());
+            return new Response(department.getId(), department.getName(), department.getCompany().getId(), department.isActive());
         }
     }
 }

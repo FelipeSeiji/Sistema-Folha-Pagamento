@@ -25,25 +25,41 @@ public class DepartmentService {
 
     @Transactional
     public DepartmentDtos.Response create(DepartmentDtos.Request request) {
-        Company company = companyRepository.findById(request.companyId())
+        Company company = companyRepository.findLockedById(request.companyId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found."));
-        Department department = departmentRepository.save(new Department(null, request.name(), company));
+        if (!company.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Company is inactive.");
+        }
+        Department department = departmentRepository.save(new Department(null, request.name(), company, true));
         return DepartmentDtos.Response.from(department);
     }
 
     @Transactional(readOnly = true)
     public Page<DepartmentDtos.Response> list(UUID companyId, Pageable pageable) {
         var departments = companyId == null
-            ? departmentRepository.findAll(pageable)
-            : departmentRepository.findByCompanyId(companyId, pageable);
+            ? departmentRepository.findByActiveTrue(pageable)
+            : departmentRepository.findByCompanyIdAndActiveTrue(companyId, pageable);
         return departments.map(DepartmentDtos.Response::from);
     }
 
     @Transactional
     public DepartmentDtos.Response update(UUID id, DepartmentDtos.UpdateRequest request) {
-        Department department = requireDepartment(id);
+        Department department = lockDepartment(id);
+        if (!department.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Inactive records cannot be updated.");
+        }
         department.setName(request.name());
         return DepartmentDtos.Response.from(department);
+    }
+
+    @Transactional
+    public void deactivate(UUID id) {
+        lockDepartment(id).setActive(false);
+    }
+
+    private Department lockDepartment(UUID id) {
+        return departmentRepository.findLockedById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Record not found."));
     }
 
     @Transactional(readOnly = true)
