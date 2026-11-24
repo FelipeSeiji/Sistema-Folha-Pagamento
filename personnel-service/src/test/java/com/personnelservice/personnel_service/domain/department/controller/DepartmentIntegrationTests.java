@@ -11,6 +11,8 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
+import com.jayway.jsonpath.JsonPath;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -51,6 +53,20 @@ class DepartmentIntegrationTests {
                 HttpResponse.BodyHandlers.ofString());
             assertThat(found.statusCode()).isEqualTo(200);
             assertThat(found.body()).isEqualTo(created.body());
+            URI pageUri = URI.create("http://127.0.0.1:" + port + "/department?companyId=" + companyId + "&page=0&size=1");
+            var page = client.send(HttpRequest.newBuilder(pageUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(page.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.number")).isZero();
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.size")).isEqualTo(1);
+            assertThat(JsonPath.<java.util.List<String>>read(page.body(), "$.content[*].id"))
+                .containsExactly(departmentId.toString());
+            URI emptyUri = URI.create("http://127.0.0.1:" + port + "/department?companyId=" + UUID.randomUUID());
+            var empty = client.send(HttpRequest.newBuilder(emptyUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(empty.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<Integer>read(empty.body(), "$.page.totalElements")).isZero();
+
 
             var missing = client.send(HttpRequest.newBuilder(URI.create(endpoint + "/" + UUID.randomUUID()))
                 .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.discarding());
