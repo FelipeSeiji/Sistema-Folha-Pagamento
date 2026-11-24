@@ -59,8 +59,29 @@ class SalaryHistoryIntegrationTests {
                 """;
             assertThat(post(client, "/salary-history", salaryRequest.formatted(UUID.randomUUID()))
                 .statusCode()).isEqualTo(404);
-            verifyCreatedAndReadable(client, post(client, "/salary-history", salaryRequest.formatted(contract)),
+            UUID initial = verifyCreatedAndReadable(client, post(client, "/salary-history", salaryRequest.formatted(contract)),
                 "/salary-history", contract.toString());
+
+            assertThat(post(client, "/salary-history", salaryRequest.formatted(contract)).statusCode()).isEqualTo(409);
+            String changePath = "/salary-history/contract/" + contract + "/change";
+            var change = HttpRequest.newBuilder(uri(changePath)).timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                    {"effectiveFrom":"2026-02-01","salary":6000.00}
+                    """))
+                .build();
+            var first = client.sendAsync(change, HttpResponse.BodyHandlers.ofString());
+            var second = client.sendAsync(change, HttpResponse.BodyHandlers.ofString());
+            var firstResponse = first.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            var secondResponse = second.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(new int[] {firstResponse.statusCode(), secondResponse.statusCode()})
+                .containsExactlyInAnyOrder(201, 409);
+            var created = firstResponse.statusCode() == 201 ? firstResponse : secondResponse;
+            verifyCreatedAndReadable(client, created, "/salary-history", contract.toString());
+            assertThat(jdbc.queryForObject("SELECT effective_until FROM tb_salary_history WHERE id = ?",
+                java.time.LocalDate.class, initial)).isEqualTo(java.time.LocalDate.parse("2026-01-31"));
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tb_salary_history WHERE employment_contract_id = ?",
+                Long.class, contract)).isEqualTo(2L);
         } finally {
             jdbc.update("""
                 DELETE FROM tb_salary_history
