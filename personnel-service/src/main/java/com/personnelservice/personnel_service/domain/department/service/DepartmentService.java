@@ -2,6 +2,8 @@ package com.personnelservice.personnel_service.domain.department.service;
 
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,14 @@ public class DepartmentService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company not found."));
         Department department = departmentRepository.save(new Department(null, request.name(), company));
         return DepartmentDtos.Response.from(department);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<DepartmentDtos.Response> list(UUID companyId, Pageable pageable) {
+        var departments = companyId == null
+            ? departmentRepository.findAll(pageable)
+            : departmentRepository.findByCompanyId(companyId, pageable);
+        return departments.map(DepartmentDtos.Response::from);
     }
 
     @Transactional(readOnly = true)
