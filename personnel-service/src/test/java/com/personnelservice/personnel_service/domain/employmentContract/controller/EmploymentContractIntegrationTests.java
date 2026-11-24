@@ -74,6 +74,16 @@ class EmploymentContractIntegrationTests {
             assertThat(jdbc.queryForObject("""
                 SELECT effective_until FROM tb_salary_history WHERE employment_contract_id = ?
                 """, java.time.LocalDate.class, contract)).isEqualTo(java.time.LocalDate.parse("2026-03-31"));
+
+            var deactivate = HttpRequest.newBuilder(uri("/job-position/" + position))
+                .timeout(Duration.ofSeconds(10)).DELETE().build();
+            assertThat(client.send(deactivate, HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(204);
+            assertThat(post(client, "/employment-contract",
+                contractRequest.formatted(employee, company, department, position)).statusCode()).isEqualTo(409);
+            var historical = client.send(HttpRequest.newBuilder(uri("/employment-contract/" + contract))
+                .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(historical.statusCode()).isEqualTo(200);
+            assertThat(historical.body()).contains(position.toString());
         } finally {
             jdbc.update("""
                 DELETE FROM tb_salary_history
