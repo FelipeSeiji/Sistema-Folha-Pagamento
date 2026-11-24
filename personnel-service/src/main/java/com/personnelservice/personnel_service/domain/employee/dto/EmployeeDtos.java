@@ -20,6 +20,12 @@ public final class EmployeeDtos {
     ) {
     }
 
+    public record UpdateRequest(
+        @NotBlank @Size(max = 150) String name,
+        @NotBlank @Email @Size(max = 254) String email
+    ) {
+    }
+
     public record Response(UUID id, String cpf, String name, String email) {
         public static Response from(Employee employee) {
             return new Response(employee.getId(), employee.getCpf(), employee.getName(), employee.getEmail());
