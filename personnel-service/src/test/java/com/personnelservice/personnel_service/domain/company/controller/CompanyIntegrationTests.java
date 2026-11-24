@@ -11,6 +11,8 @@ import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadLocalRandom;
 
+import com.jayway.jsonpath.JsonPath;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,6 +41,14 @@ class CompanyIntegrationTests {
 
             assertThat(new int[] {first.get(10, TimeUnit.SECONDS).statusCode(),
                 second.get(10, TimeUnit.SECONDS).statusCode()}).containsExactlyInAnyOrder(201, 409);
+
+            URI pageUri = URI.create("http://127.0.0.1:" + port + "/company?page=0&size=1");
+            var page = client.send(HttpRequest.newBuilder(pageUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(page.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.number")).isZero();
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.size")).isEqualTo(1);
+            assertThat(JsonPath.<Integer>read(page.body(), "$.content.length()")).isEqualTo(1);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tb_company WHERE cnpj = ?", Long.class, cnpj))
                 .isEqualTo(1L);
         } finally {
