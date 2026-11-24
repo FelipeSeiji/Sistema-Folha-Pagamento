@@ -71,6 +71,25 @@ class DepartmentIntegrationTests {
             var missing = client.send(HttpRequest.newBuilder(URI.create(endpoint + "/" + UUID.randomUUID()))
                 .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.discarding());
             assertThat(missing.statusCode()).isEqualTo(404);
+
+            URI updateUri = location;
+            String updatedPayload = """
+                {"name":"Updated Department"}
+                """;
+            var updated = put(client, updateUri, updatedPayload);
+            assertThat(updated.statusCode()).isEqualTo(200);
+            assertThat(updated.body()).contains("Updated Department", companyId.toString());
+
+            assertThat(put(client, updateUri, """
+                {"name":" "}
+                """).statusCode()).isEqualTo(400);
+            URI missingUpdateUri = URI.create("http://127.0.0.1:" + port + "/department/" + UUID.randomUUID());
+            assertThat(put(client, missingUpdateUri, updatedPayload).statusCode()).isEqualTo(404);
+
+            var persisted = client.send(HttpRequest.newBuilder(updateUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(persisted.statusCode()).isEqualTo(200);
+            assertThat(persisted.body()).isEqualTo(updated.body());
         } finally {
             jdbc.update("DELETE FROM tb_department WHERE company_id = ?", companyId);
             jdbc.update("DELETE FROM tb_company WHERE id = ?", companyId);
@@ -82,6 +101,14 @@ class DepartmentIntegrationTests {
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(
                 "{\"companyId\":\"" + companyId + "\",\"name\":\"" + name + "\"}"))
+            .build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> put(HttpClient client, URI uri, String body) throws Exception {
+        var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10))
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(body))
             .build();
         return client.send(request, HttpResponse.BodyHandlers.ofString());
     }
