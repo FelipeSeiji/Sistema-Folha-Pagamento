@@ -22,6 +22,12 @@ public final class SalaryHistoryDtos {
     ) {
     }
 
+    public record ChangeRequest(
+        @NotNull LocalDate effectiveFrom,
+        @NotNull @Positive @Digits(integer = 17, fraction = 2) BigDecimal salary
+    ) {
+    }
+
     public record Response(
         UUID id,
         UUID contractId,
