@@ -31,6 +31,12 @@ public final class CompanyDtos {
         }
     }
 
+    public record UpdateRequest(@NotBlank @CodePointLength(max = 255) String legalName) {
+        public UpdateRequest {
+            legalName = legalName == null ? null : legalName.strip();
+        }
+    }
+
     public record Response(UUID id, String cnpj, String legalName) {
         public static Response from(Company company) {
             return new Response(company.getId(), company.getCnpj(), company.getLegalName());
