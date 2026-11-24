@@ -16,6 +16,8 @@ import com.personnelservice.personnel_service.domain.employmentContract.dto.Empl
 import com.personnelservice.personnel_service.domain.employmentContract.model.EmploymentContract;
 import com.personnelservice.personnel_service.domain.employmentContract.repository.EmploymentContractRepository;
 
+import com.personnelservice.personnel_service.domain.salaryHistory.repository.SalaryHistoryRepository;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class EmploymentContractService {
     private final CompanyRepository companyRepository;
     private final DepartmentRepository departmentRepository;
     private final JobPositionRepository jobPositionRepository;
+    private final SalaryHistoryRepository salaryHistoryRepository;
 
     @Transactional
     public EmploymentContractDtos.Response create(@NotNull @Valid EmploymentContractDtos.Request request) {
@@ -53,6 +56,33 @@ public class EmploymentContractService {
         entity.setHireDate(request.hireDate());
         entity.setMonthlyWorkHours(request.monthlyWorkHours());
         return EmploymentContractDtos.Response.from(employmentContractRepository.save(entity));
+    }
+
+    @Transactional
+    public EmploymentContractDtos.Response terminate(
+        UUID id, @NotNull @Valid EmploymentContractDtos.TerminationRequest request
+    ) {
+        var contract = employmentContractRepository.findLockedById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employment contract not found."));
+        var date = request.terminationDate();
+        if (date.isBefore(contract.getHireDate())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Termination cannot precede the hire date.");
+        }
+        if (contract.getTerminationDate() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Employment contract already has a termination date.");
+        }
+
+        var history = salaryHistoryRepository.findByContractId(id);
+        if (history.stream().anyMatch(period -> period.getEffectiveFrom().isAfter(date))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Salary history contains periods after termination.");
+        }
+        for (var period : history) {
+            if (period.getEffectiveUntil() == null || period.getEffectiveUntil().isAfter(date)) {
+                period.setEffectiveUntil(date);
+            }
+        }
+        contract.setTerminationDate(date);
+        return EmploymentContractDtos.Response.from(contract);
     }
 
     @Transactional(readOnly = true)
