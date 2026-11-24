@@ -39,10 +39,20 @@ public class DepartmentService {
         return departments.map(DepartmentDtos.Response::from);
     }
 
+    @Transactional
+    public DepartmentDtos.Response update(UUID id, DepartmentDtos.UpdateRequest request) {
+        Department department = requireDepartment(id);
+        department.setName(request.name());
+        return DepartmentDtos.Response.from(department);
+    }
+
     @Transactional(readOnly = true)
     public DepartmentDtos.Response findById(UUID id) {
+        return DepartmentDtos.Response.from(requireDepartment(id));
+    }
+
+    private Department requireDepartment(UUID id) {
         return departmentRepository.findById(id)
-            .map(DepartmentDtos.Response::from)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found."));
     }
 }
