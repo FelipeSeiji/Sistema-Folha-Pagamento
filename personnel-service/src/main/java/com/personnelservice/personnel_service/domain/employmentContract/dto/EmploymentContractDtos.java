@@ -3,6 +3,8 @@ package com.personnelservice.personnel_service.domain.employmentContract.dto;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.personnelservice.personnel_service.domain.employmentContract.model.EmploymentContract;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -34,5 +36,10 @@ public final class EmploymentContractDtos {
         LocalDate terminationDate,
         int monthlyWorkHours
     ) {
+        public static Response from(EmploymentContract entity) {
+            return new Response(entity.getId(), entity.getEmployee().getId(), entity.getCompany().getId(),
+                entity.getDepartment().getId(), entity.getPosition().getId(), entity.getRegistrationNumber(),
+                entity.getHireDate(), entity.getTerminationDate(), entity.getMonthlyWorkHours());
+        }
     }
 }
