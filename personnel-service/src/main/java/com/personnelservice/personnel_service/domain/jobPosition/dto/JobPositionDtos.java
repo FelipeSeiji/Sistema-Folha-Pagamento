@@ -17,9 +17,9 @@ public final class JobPositionDtos {
     ) {
     }
 
-    public record Response(UUID id, String name, String description) {
+    public record Response(UUID id, String name, String description, boolean active) {
         public static Response from(JobPosition entity) {
-            return new Response(entity.getId(), entity.getName(), entity.getDescription());
+            return new Response(entity.getId(), entity.getName(), entity.getDescription(), entity.isActive());
         }
     }
 }

@@ -26,21 +26,34 @@ public class JobPositionService {
 
     @Transactional
     public JobPositionDtos.Response create(@NotNull @Valid JobPositionDtos.Request request) {
-        JobPosition entity = new JobPosition(null, request.name(), request.description());
+        JobPosition entity = new JobPosition(null, request.name(), request.description(), true);
         return JobPositionDtos.Response.from(jobPositionRepository.save(entity));
     }
 
     @Transactional(readOnly = true)
     public Page<JobPositionDtos.Response> list(Pageable pageable) {
-        return jobPositionRepository.findAll(pageable).map(JobPositionDtos.Response::from);
+        return jobPositionRepository.findByActiveTrue(pageable).map(JobPositionDtos.Response::from);
     }
 
     @Transactional
     public JobPositionDtos.Response update(UUID id, @NotNull @Valid JobPositionDtos.Request request) {
-        JobPosition jobPosition = requireJobPosition(id);
+        JobPosition jobPosition = lockJobPosition(id);
+        if (!jobPosition.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Inactive records cannot be updated.");
+        }
         jobPosition.setName(request.name());
         jobPosition.setDescription(request.description());
         return JobPositionDtos.Response.from(jobPosition);
+    }
+
+    @Transactional
+    public void deactivate(UUID id) {
+        lockJobPosition(id).setActive(false);
+    }
+
+    private JobPosition lockJobPosition(UUID id) {
+        return jobPositionRepository.findLockedById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Record not found."));
     }
 
     @Transactional(readOnly = true)
