@@ -3,12 +3,16 @@ package com.personnelservice.personnel_service.domain.department.controller;
 import java.net.URI;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -33,6 +37,14 @@ public class DepartmentController {
             .toUri();
 
         return ResponseEntity.created(location).body(department);
+    }
+
+    @GetMapping
+    public PagedModel<DepartmentDtos.Response> list(
+        @RequestParam(name = "companyId", required = false) UUID companyId,
+        @PageableDefault(size = 20, sort = "id") Pageable pageable
+    ) {
+        return new PagedModel<>(departmentService.list(companyId, pageable));
     }
 
     @GetMapping("/{id}")
