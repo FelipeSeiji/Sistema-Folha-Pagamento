@@ -82,6 +82,23 @@ class EmployeeIntegrationTests {
                 HttpResponse.BodyHandlers.ofString());
             assertThat(persisted.statusCode()).isEqualTo(200);
             assertThat(persisted.body()).isEqualTo(updated.body());
+
+            var deactivate = HttpRequest.newBuilder(updateUri).timeout(Duration.ofSeconds(10)).DELETE().build();
+            assertThat(client.send(deactivate, HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(204);
+            assertThat(client.send(deactivate, HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(204);
+            var historical = client.send(HttpRequest.newBuilder(updateUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(historical.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<Boolean>read(historical.body(), "$.active")).isFalse();
+            assertThat(put(client, updateUri, updatedPayload).statusCode()).isEqualTo(409);
+
+            var activePage = client.send(HttpRequest.newBuilder(pageUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(activePage.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<java.util.List<String>>read(activePage.body(), "$.content[*].id"))
+                .doesNotContain(id.toString());
+            assertThat(jdbc.queryForObject("SELECT active FROM tb_employee WHERE id = ?", Boolean.class, id))
+                .isFalse();
         } finally {
             jdbc.update("DELETE FROM tb_employee WHERE cpf = ?", cpf);
         }
