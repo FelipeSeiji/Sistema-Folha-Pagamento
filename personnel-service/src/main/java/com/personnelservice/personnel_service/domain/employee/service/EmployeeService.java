@@ -49,10 +49,21 @@ public class EmployeeService {
         return employeeRepository.findAll(pageable).map(EmployeeDtos.Response::from);
     }
 
+    @Transactional
+    public EmployeeDtos.Response update(UUID id, @NotNull @Valid EmployeeDtos.UpdateRequest request) {
+        Employee employee = requireEmployee(id);
+        employee.setName(request.name());
+        employee.setEmail(request.email());
+        return EmployeeDtos.Response.from(employee);
+    }
+
     @Transactional(readOnly = true)
     public EmployeeDtos.Response findById(UUID id) {
+        return EmployeeDtos.Response.from(requireEmployee(id));
+    }
+
+    private Employee requireEmployee(UUID id) {
         return employeeRepository.findById(id)
-            .map(EmployeeDtos.Response::from)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found."));
     }
 }
