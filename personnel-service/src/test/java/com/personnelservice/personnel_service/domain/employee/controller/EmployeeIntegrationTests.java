@@ -11,6 +11,8 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
+import com.jayway.jsonpath.JsonPath;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,6 +47,14 @@ class EmployeeIntegrationTests {
                 HttpResponse.BodyHandlers.ofString());
             assertThat(found.statusCode()).isEqualTo(200);
             assertThat(found.body()).isEqualTo(created.body());
+            URI pageUri = URI.create("http://127.0.0.1:" + port + "/employee?page=0&size=1");
+            var page = client.send(HttpRequest.newBuilder(pageUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(page.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.number")).isZero();
+            assertThat(JsonPath.<Integer>read(page.body(), "$.page.size")).isEqualTo(1);
+            assertThat(JsonPath.<Integer>read(page.body(), "$.content.length()")).isEqualTo(1);
+
 
             assertThat(post(client, endpoint, cpf, "other@example.test").statusCode()).isEqualTo(409);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tb_employee WHERE cpf = ?", Long.class, cpf))
