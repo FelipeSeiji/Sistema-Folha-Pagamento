@@ -19,7 +19,6 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class JobPosition {
-
     @Id
     @GeneratedValue
     private UUID id;

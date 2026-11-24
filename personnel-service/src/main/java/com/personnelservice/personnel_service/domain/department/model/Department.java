@@ -24,7 +24,6 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Department {
-
     @Id
     @GeneratedValue
     private UUID id;
