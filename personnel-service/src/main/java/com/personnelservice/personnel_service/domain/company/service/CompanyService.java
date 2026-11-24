@@ -2,7 +2,7 @@ package com.personnelservice.personnel_service.domain.company.service;
 
 import java.util.UUID;
 
-import org.hibernate.exception.ConstraintViolationException;
+import org.postgresql.util.PSQLException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,8 +32,10 @@ public class CompanyService {
         try {
             return CompanyDtos.Response.from(companyRepository.saveAndFlush(company));
         } catch (DataIntegrityViolationException exception) {
-            if (exception.getCause() instanceof ConstraintViolationException violation
-                    && CNPJ_UNIQUE_CONSTRAINT.equals(violation.getConstraintName())) {
+            if (exception.getMostSpecificCause() instanceof PSQLException violation
+                    && "23505".equals(violation.getSQLState())
+                    && violation.getServerErrorMessage() != null
+                    && CNPJ_UNIQUE_CONSTRAINT.equals(violation.getServerErrorMessage().getConstraint())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "CNPJ is already registered.", exception);
             }
             throw exception;
