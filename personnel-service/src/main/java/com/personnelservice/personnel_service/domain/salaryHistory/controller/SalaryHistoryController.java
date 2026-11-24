@@ -35,6 +35,19 @@ public class SalaryHistoryController {
         return ResponseEntity.created(location).body(salaryHistory);
     }
 
+    @PostMapping("/contract/{contractId}/change")
+    public ResponseEntity<SalaryHistoryDtos.Response> change(
+        @PathVariable("contractId") UUID contractId,
+        @Valid @RequestBody SalaryHistoryDtos.ChangeRequest request
+    ) {
+        var history = salaryHistoryService.change(contractId, request);
+        URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
+            .path("/salary-history/{id}")
+            .buildAndExpand(history.id())
+            .toUri();
+        return ResponseEntity.created(location).body(history);
+    }
+
     @GetMapping("/{id}")
     public SalaryHistoryDtos.Response findById(@PathVariable("id") UUID id) {
         return salaryHistoryService.findById(id);
