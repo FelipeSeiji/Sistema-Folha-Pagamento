@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,6 +44,14 @@ public class EmployeeController {
         @PageableDefault(size = 20, sort = "id") Pageable pageable
     ) {
         return new PagedModel<>(employeeService.list(pageable));
+    }
+
+    @PutMapping("/{id}")
+    public EmployeeDtos.Response update(
+        @PathVariable("id") UUID id,
+        @Valid @RequestBody EmployeeDtos.UpdateRequest request
+    ) {
+        return employeeService.update(id, request);
     }
 
     @GetMapping("/{id}")
