@@ -31,3 +31,22 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local environment ###
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+### Java runtime output ###
+*.class
+*.log
+logs/
+hs_err_pid*
+replay_pid*
+
+### Operating system files ###
+.DS_Store
+Thumbs.db
+Desktop.ini
