@@ -35,10 +35,21 @@ public class JobPositionService {
         return jobPositionRepository.findAll(pageable).map(JobPositionDtos.Response::from);
     }
 
+    @Transactional
+    public JobPositionDtos.Response update(UUID id, @NotNull @Valid JobPositionDtos.Request request) {
+        JobPosition jobPosition = requireJobPosition(id);
+        jobPosition.setName(request.name());
+        jobPosition.setDescription(request.description());
+        return JobPositionDtos.Response.from(jobPosition);
+    }
+
     @Transactional(readOnly = true)
     public JobPositionDtos.Response findById(UUID id) {
+        return JobPositionDtos.Response.from(requireJobPosition(id));
+    }
+
+    private JobPosition requireJobPosition(UUID id) {
         return jobPositionRepository.findById(id)
-            .map(JobPositionDtos.Response::from)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job position not found."));
     }
 }
