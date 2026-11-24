@@ -47,6 +47,25 @@ class JobPositionIntegrationTests {
             assertThat(JsonPath.<Integer>read(page.body(), "$.page.size")).isEqualTo(1);
             assertThat(JsonPath.<Integer>read(page.body(), "$.content.length()")).isEqualTo(1);
 
+
+            URI updateUri = uri("/job-position/" + position);
+            String updatedPayload = """
+                {"name":"Updated Position","description":"Updated description"}
+                """;
+            var updated = put(client, updateUri, updatedPayload);
+            assertThat(updated.statusCode()).isEqualTo(200);
+            assertThat(updated.body()).contains("Updated Position", "Updated description");
+
+            assertThat(put(client, updateUri, """
+                {"name":" "}
+                """).statusCode()).isEqualTo(400);
+            URI missingUpdateUri = URI.create("http://127.0.0.1:" + port + "/job-position/" + UUID.randomUUID());
+            assertThat(put(client, missingUpdateUri, updatedPayload).statusCode()).isEqualTo(404);
+
+            var persisted = client.send(HttpRequest.newBuilder(updateUri).timeout(Duration.ofSeconds(10)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertThat(persisted.statusCode()).isEqualTo(200);
+            assertThat(persisted.body()).isEqualTo(updated.body());
         } finally {
             if (position != null) {
                 jdbc.update("DELETE FROM tb_job_position WHERE id = ?", position);
@@ -83,5 +102,13 @@ class JobPositionIntegrationTests {
 
     private URI uri(String path) {
         return URI.create("http://127.0.0.1:" + port + path);
+    }
+
+    private HttpResponse<String> put(HttpClient client, URI uri, String body) throws Exception {
+        var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10))
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }
