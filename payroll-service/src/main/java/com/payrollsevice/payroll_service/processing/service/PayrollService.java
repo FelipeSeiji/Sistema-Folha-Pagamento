@@ -20,6 +20,7 @@ import com.payrollsevice.payroll_service.personnel.dto.PersonnelPayrollInput;
 import com.payrollsevice.payroll_service.processing.dto.PayrollDtos;
 import com.payrollsevice.payroll_service.processing.model.Payroll;
 import com.payrollsevice.payroll_service.processing.model.Payroll.Snapshot;
+import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -64,6 +65,15 @@ public class PayrollService {
             }
             throw exception;
         }
+    }
+
+    @Transactional
+    public void delete(UUID id) {
+        Payroll payroll = requirePayroll(id);
+        if (payroll.getStatus() != PayrollStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only draft payrolls can be deleted.");
+        }
+        repository.delete(payroll);
     }
 
     @Transactional(readOnly = true)
