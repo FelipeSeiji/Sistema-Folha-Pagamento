@@ -25,13 +25,19 @@ public class RubricService {
     public RubricDtos.Response create(RubricDtos.Request request) {
         Rubric entity = new Rubric();
         entity.setCompanyId(request.companyId());
-        entity.setCode(request.code().strip());
-        entity.setDescription(request.description().strip());
-        entity.setType(request.type());
-        entity.setSubjectToInss(request.subjectToInss());
-        entity.setSubjectToIrrf(request.subjectToIrrf());
-        entity.setSubjectToFgts(request.subjectToFgts());
+        applyChanges(entity, request);
         return RubricDtos.Response.from(repository.saveAndFlush(entity));
+    }
+
+    @Transactional
+    public RubricDtos.Response update(UUID id, RubricDtos.Request request) {
+        Rubric entity = requireRubric(id);
+        if (!entity.getCompanyId().equals(request.companyId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Rubric company cannot be changed.");
+        }
+        applyChanges(entity, request);
+        repository.flush();
+        return RubricDtos.Response.from(entity);
     }
 
     @Transactional(readOnly = true)
@@ -41,8 +47,20 @@ public class RubricService {
 
     @Transactional(readOnly = true)
     public RubricDtos.Response findById(UUID id) {
+        return RubricDtos.Response.from(requireRubric(id));
+    }
+
+    private Rubric requireRubric(UUID id) {
         return repository.findById(id)
-            .map(RubricDtos.Response::from)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rubric not found."));
+    }
+
+    private static void applyChanges(Rubric entity, RubricDtos.Request request) {
+        entity.setCode(request.code().strip());
+        entity.setDescription(request.description().strip());
+        entity.setType(request.type());
+        entity.setSubjectToInss(request.subjectToInss());
+        entity.setSubjectToIrrf(request.subjectToIrrf());
+        entity.setSubjectToFgts(request.subjectToFgts());
     }
 }

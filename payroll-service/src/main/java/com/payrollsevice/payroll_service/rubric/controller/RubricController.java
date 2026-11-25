@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,6 +42,11 @@ public class RubricController {
     @GetMapping
     public PagedModel<RubricDtos.Response> list(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
         return new PagedModel<>(service.list(pageable));
+    }
+
+    @PutMapping("/{id}")
+    public RubricDtos.Response update(@PathVariable("id") UUID id, @Valid @RequestBody RubricDtos.Request request) {
+        return service.update(id, request);
     }
 
     @GetMapping("/{id}")
