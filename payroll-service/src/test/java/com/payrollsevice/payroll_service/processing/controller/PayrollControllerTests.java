@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
@@ -23,6 +24,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.client.RestClient;
 
 import com.payrollsevice.payroll_service.attendanceSummary.dto.AttendanceSummaryDtos;
+import com.payrollsevice.payroll_service.outbox.model.PayrollOutboxEvent;
+import com.payrollsevice.payroll_service.outbox.repository.PayrollOutboxRepository;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.payslip.model.Payslip;
 import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
@@ -50,6 +53,9 @@ class PayrollControllerTests {
 
     @Autowired
     private PayslipRepository payslipRepository;
+
+    @Autowired
+    private PayrollOutboxRepository outboxRepository;
 
     @Test
     void createsAndReadsDraftWithPersistedSnapshot() {
@@ -236,6 +242,30 @@ class PayrollControllerTests {
         var closed = repository.findById(payrollId).orElseThrow();
         assertThat(closed.getStatus()).isEqualTo(PayrollStatus.CLOSED);
         assertThat(closed.getVersion()).isEqualTo(version + 1);
+        assertThat(outboxRepository.findByPayrollId(payrollId)).singleElement().satisfies(event -> {
+            assertThat(event.getEventType()).isEqualTo(PayrollOutboxEvent.PAYROLL_CLOSED);
+            assertThat(event.getPayload()).isEqualTo(new PayrollOutboxEvent.PayrollClosed(
+                payrollId, closed.getCompanyId(), YearMonth.from(closed.getPeriod())));
+            assertThat(event.getOccurredAt()).isNotNull();
+            assertThat(event.getPublishedAt()).isNull();
+        });
+    }
+
+    @Test
+    void rollsBackClosingWhenTheOutboxInsertConflicts() {
+        var fixture = prepareCalculation();
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        var calculated = repository.findById(fixture.payrollId()).orElseThrow();
+        var existing = outboxRepository.saveAndFlush(new PayrollOutboxEvent(calculated.getId(),
+            calculated.getCompanyId(), YearMonth.from(calculated.getPeriod()), Instant.now()));
+
+        assertThat(client().post().uri("/payroll/{id}/close", calculated.getId())
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+        var reloaded = repository.findById(calculated.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(PayrollStatus.CALCULATED);
+        assertThat(reloaded.getVersion()).isEqualTo(calculated.getVersion());
+        assertThat(outboxRepository.findByPayrollId(calculated.getId()))
+            .extracting(PayrollOutboxEvent::getId).containsExactly(existing.getId());
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
