@@ -19,9 +19,11 @@ import com.payrollsevice.payroll_service.attendanceSummary.model.AttendanceSumma
 import com.payrollsevice.payroll_service.attendanceSummary.repository.AttendanceSummaryRepository;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.payslip.model.Payslip;
+import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
 import com.payrollsevice.payroll_service.processing.dto.PayrollDtos.CalculationRequest;
 import com.payrollsevice.payroll_service.processing.model.Payroll;
 import com.payrollsevice.payroll_service.processing.model.Payroll.Snapshot.Contract;
+import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
 import com.payrollsevice.payroll_service.rubric.model.Rubric;
 import com.payrollsevice.payroll_service.rubric.model.RubricType;
@@ -33,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RegularPayrollCalculator {
     private final PayrollRepository payrollRepository;
+    private final PayslipRepository payslipRepository;
     private final AttendanceSummaryRepository attendanceRepository;
     private final RubricRepository rubricRepository;
 
@@ -40,6 +43,23 @@ public class RegularPayrollCalculator {
     public List<PayslipDtos.Preview> preview(UUID payrollId, CalculationRequest request) {
         Payroll payroll = payrollRepository.findById(payrollId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        return calculatePayslips(payroll, request).stream().map(PayslipDtos.Preview::from).toList();
+    }
+
+    @Transactional
+    public List<PayslipDtos.Response> calculate(UUID payrollId, CalculationRequest request) {
+        Payroll payroll = payrollRepository.findForUpdateById(payrollId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        if (payroll.getStatus() != PayrollStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only draft payrolls can be calculated.");
+        }
+
+        List<Payslip> payslips = calculatePayslips(payroll, request);
+        payroll.setStatus(PayrollStatus.CALCULATED);
+        return payslipRepository.saveAllAndFlush(payslips).stream().map(PayslipDtos.Response::from).toList();
+    }
+
+    private List<Payslip> calculatePayslips(Payroll payroll, CalculationRequest request) {
         var contracts = payroll.getSnapshotPayload().contracts();
         if (contracts.isEmpty()) {
             return List.of();
@@ -63,8 +83,7 @@ public class RegularPayrollCalculator {
             if (summary == null) {
                 throw invalid("Attendance summary is missing for contract " + contract.contractId() + ".");
             }
-            return PayslipDtos.Preview.from(calculate(payroll, contract, summary, salary, overtime, absence,
-                request.overtimeMultiplier()));
+            return calculate(payroll, contract, summary, salary, overtime, absence, request.overtimeMultiplier());
         }).toList();
     }
 
