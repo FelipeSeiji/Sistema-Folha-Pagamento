@@ -51,8 +51,7 @@ public class PayslipService {
 
     @Transactional
     public PayslipDtos.Response update(UUID id, PayslipDtos.Request request) {
-        Payslip entity = repository.findForUpdateById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payslip not found."));
+        Payslip entity = requirePayslipForUpdate(id);
         if (!entity.getPayroll().getId().equals(request.payrollId())
                 || !entity.getContractId().equals(request.contractId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payslip payroll and contract cannot be changed.");
@@ -101,6 +100,13 @@ public class PayslipService {
         }
     }
 
+    @Transactional
+    public void delete(UUID id) {
+        Payslip payslip = requirePayslipForUpdate(id);
+        requireDraft(payslip.getPayroll());
+        repository.delete(payslip);
+    }
+
     @Transactional(readOnly = true)
     public Page<PayslipDtos.Response> list(Pageable pageable) {
         return repository.findAll(pageable).map(PayslipDtos.Response::from);
@@ -110,6 +116,11 @@ public class PayslipService {
     public PayslipDtos.Response findById(UUID id) {
         return repository.findById(id)
             .map(PayslipDtos.Response::from)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payslip not found."));
+    }
+
+    private Payslip requirePayslipForUpdate(UUID id) {
+        return repository.findForUpdateById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payslip not found."));
     }
 }
