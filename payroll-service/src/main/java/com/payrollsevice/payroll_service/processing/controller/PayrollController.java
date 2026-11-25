@@ -54,6 +54,13 @@ public class PayrollController {
         return calculator.preview(id, request);
     }
 
+    @PostMapping("/{id}/calculate")
+    public List<PayslipDtos.Response> calculate(
+        @PathVariable("id") UUID id, @Valid @RequestBody PayrollDtos.CalculationRequest request
+    ) {
+        return calculator.calculate(id, request);
+    }
+
     @GetMapping("/{id}")
     public PayrollDtos.Response findById(@PathVariable("id") UUID id) {
         return payrollService.findById(id);
