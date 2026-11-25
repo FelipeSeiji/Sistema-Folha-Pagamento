@@ -193,25 +193,7 @@ class PayrollControllerTests {
     @Test
     void concurrentCalculationRequestsCreateOnlyOnePayslipPerContract() throws Exception {
         var fixture = prepareCalculation();
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
-        Callable<Integer> calculate = () -> {
-            ready.countDown();
-            if (!start.await(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("Calculation start signal timed out.");
-            }
-            return calculateStatus(fixture);
-        };
-
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            var first = executor.submit(calculate);
-            var second = executor.submit(calculate);
-            boolean bothReady = ready.await(10, TimeUnit.SECONDS);
-            start.countDown();
-            assertThat(bothReady).isTrue();
-            assertThat(List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
-                .containsExactlyInAnyOrder(200, 409);
-        }
+        assertThat(runConcurrently(() -> calculateStatus(fixture))).containsExactlyInAnyOrder(200, 409);
 
         assertThat(repository.findById(fixture.payrollId()).orElseThrow().getStatus())
             .isEqualTo(PayrollStatus.CALCULATED);
@@ -238,6 +220,43 @@ class PayrollControllerTests {
         assertThat(repository.findById(payrollId).orElseThrow().getStatus()).isEqualTo(PayrollStatus.CLOSED);
         assertThat(http.post().uri(route, payrollId)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+    }
+
+    @Test
+    void concurrentClosingRequestsCloseThePayrollExactlyOnce() throws Exception {
+        var fixture = prepareCalculation();
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        UUID payrollId = fixture.payrollId();
+        long version = repository.findById(payrollId).orElseThrow().getVersion();
+
+        var statuses = runConcurrently(() -> client().post().uri("/payroll/{id}/close", payrollId)
+            .exchange((sent, response) -> response.getStatusCode().value()));
+
+        assertThat(statuses).containsExactlyInAnyOrder(200, 409);
+        var closed = repository.findById(payrollId).orElseThrow();
+        assertThat(closed.getStatus()).isEqualTo(PayrollStatus.CLOSED);
+        assertThat(closed.getVersion()).isEqualTo(version + 1);
+    }
+
+    private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<Integer> synchronizedRequest = () -> {
+            ready.countDown();
+            if (!start.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Concurrent request start signal timed out.");
+            }
+            return request.call();
+        };
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(synchronizedRequest);
+            var second = executor.submit(synchronizedRequest);
+            boolean bothReady = ready.await(10, TimeUnit.SECONDS);
+            start.countDown();
+            assertThat(bothReady).isTrue();
+            return List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS));
+        }
     }
 
     private int calculateStatus(CalculationFixture fixture) {
