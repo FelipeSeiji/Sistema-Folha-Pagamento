@@ -55,6 +55,17 @@ public final class PayslipDtos {
         }
     }
 
+    public record Preview(
+        UUID contractId, BigDecimal appliedBaseSalary, BigDecimal totalEarnings,
+        BigDecimal totalDeductions, BigDecimal netPay, List<ItemResponse> items
+    ) {
+        public static Preview from(Payslip calculated) {
+            return new Preview(calculated.getContractId(), calculated.getAppliedBaseSalary(),
+                calculated.getTotalEarnings(), calculated.getTotalDeductions(), calculated.getNetPay(),
+                calculated.getItems().stream().map(ItemResponse::from).toList());
+        }
+    }
+
     public record ItemResponse(
         UUID rubricId, String appliedCode, String appliedDescription,
         RubricType appliedType, BigDecimal reference, BigDecimal amount

@@ -1,5 +1,6 @@
 package com.payrollsevice.payroll_service.processing.dto;
 
+import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.util.UUID;
 
@@ -7,6 +8,8 @@ import com.payrollsevice.payroll_service.processing.model.Payroll;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.model.PayrollType;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -14,6 +17,14 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PayrollDtos {
     public record CreateRequest(@NotNull UUID companyId, @NotNull YearMonth period, @NotNull PayrollType type) {
+    }
+
+    public record CalculationRequest(
+        @NotNull UUID salaryRubricId,
+        @NotNull UUID overtimeRubricId,
+        @NotNull UUID absenceRubricId,
+        @NotNull @DecimalMin("1") @Digits(integer = 3, fraction = 4) BigDecimal overtimeMultiplier
+    ) {
     }
 
     public record Response(UUID id, UUID companyId, YearMonth period, PayrollType type, PayrollStatus status) {
