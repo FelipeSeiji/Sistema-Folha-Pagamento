@@ -33,7 +33,7 @@ class PayslipControllerTests {
     private PayrollRepository payrollRepository;
 
     @Test
-    void createsReadsAndUpdatesPayslipWithOrderedItems() {
+    void managesPayslipAndProtectsReferencedRecords() {
         UUID companyId = UUID.randomUUID();
         UUID contractId = UUID.randomUUID();
         LocalDate period = LocalDate.of(2026, 11, 1);
@@ -89,8 +89,24 @@ class PayslipControllerTests {
             .containsExactly("Updated Salary");
 
         payroll.setStatus(PayrollStatus.CLOSED);
-        payrollRepository.saveAndFlush(payroll);
+        payroll = payrollRepository.saveAndFlush(payroll);
         assertThat(client.put().uri("/payslip/{id}", payslipId).body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+
+        assertThat(deleteStatus(client, "/payslip/{id}", payslipId)).isEqualTo(409);
+        assertThat(deleteStatus(client, "/payroll/{id}", payroll.getId())).isEqualTo(409);
+
+        payroll.setStatus(PayrollStatus.DRAFT);
+        payrollRepository.saveAndFlush(payroll);
+        assertThat(deleteStatus(client, "/payroll/{id}", payroll.getId())).isEqualTo(409);
+        assertThat(deleteStatus(client, "/rubric/{id}", salary.id())).isEqualTo(409);
+        assertThat(deleteStatus(client, "/payslip/{id}", payslipId)).isEqualTo(204);
+        assertThat(deleteStatus(client, "/payslip/{id}", payslipId)).isEqualTo(404);
+        assertThat(deleteStatus(client, "/rubric/{id}", salary.id())).isEqualTo(204);
+        assertThat(deleteStatus(client, "/payroll/{id}", payroll.getId())).isEqualTo(204);
+    }
+
+    private static int deleteStatus(RestClient client, String path, UUID id) {
+        return client.delete().uri(path, id).exchange((sent, response) -> response.getStatusCode().value());
     }
 }
