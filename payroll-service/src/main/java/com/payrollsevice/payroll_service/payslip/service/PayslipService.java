@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.payslip.model.Payslip;
 import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
+import com.payrollsevice.payroll_service.processing.model.Payroll;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
 import com.payrollsevice.payroll_service.rubric.model.Rubric;
@@ -34,29 +35,47 @@ public class PayslipService {
     public PayslipDtos.Response create(PayslipDtos.Request request) {
         var payroll = payrollRepository.findById(request.payrollId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
-        if (payroll.getStatus() != PayrollStatus.DRAFT) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only draft payrolls accept new payslips.");
-        }
+        requireDraft(payroll);
         if (payroll.getSnapshotPayload().contracts().stream()
                 .noneMatch(contract -> contract.contractId().equals(request.contractId()))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                 "Contract is absent from the payroll snapshot.");
         }
 
+        Payslip entity = new Payslip();
+        entity.setPayroll(payroll);
+        entity.setContractId(request.contractId());
+        applyChanges(entity, request);
+        return PayslipDtos.Response.from(repository.saveAndFlush(entity));
+    }
+
+    @Transactional
+    public PayslipDtos.Response update(UUID id, PayslipDtos.Request request) {
+        Payslip entity = repository.findForUpdateById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payslip not found."));
+        if (!entity.getPayroll().getId().equals(request.payrollId())
+                || !entity.getContractId().equals(request.contractId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Payslip payroll and contract cannot be changed.");
+        }
+        requireDraft(entity.getPayroll());
+        applyChanges(entity, request);
+        repository.flush();
+        return PayslipDtos.Response.from(entity);
+    }
+
+    private void applyChanges(Payslip entity, PayslipDtos.Request request) {
         var rubricIds = request.items().stream().map(PayslipDtos.ItemRequest::rubricId).distinct().toList();
         Map<UUID, Rubric> rubrics = new HashMap<>();
         rubricRepository.findAllById(rubricIds).forEach(rubric -> rubrics.put(rubric.getId(), rubric));
 
-        Payslip entity = new Payslip();
-        entity.setPayroll(payroll);
-        entity.setContractId(request.contractId());
+        entity.getItems().clear();
         entity.setAppliedBaseSalary(request.appliedBaseSalary());
 
         BigDecimal earnings = BigDecimal.ZERO;
         BigDecimal deductions = BigDecimal.ZERO;
         for (var requestedItem : request.items()) {
             Rubric rubric = rubrics.get(requestedItem.rubricId());
-            if (rubric == null || !payroll.getCompanyId().equals(rubric.getCompanyId())) {
+            if (rubric == null || !entity.getPayroll().getCompanyId().equals(rubric.getCompanyId())) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                     "Every item must reference a rubric from the payroll company.");
             }
@@ -74,7 +93,12 @@ public class PayslipService {
         entity.setTotalEarnings(earnings);
         entity.setTotalDeductions(deductions);
         entity.setNetPay(earnings.subtract(deductions));
-        return PayslipDtos.Response.from(repository.saveAndFlush(entity));
+    }
+
+    private static void requireDraft(Payroll payroll) {
+        if (payroll.getStatus() != PayrollStatus.DRAFT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only draft payrolls allow payslip changes.");
+        }
     }
 
     @Transactional(readOnly = true)
