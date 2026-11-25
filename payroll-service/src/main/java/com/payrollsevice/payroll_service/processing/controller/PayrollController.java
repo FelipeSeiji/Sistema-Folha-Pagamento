@@ -61,6 +61,11 @@ public class PayrollController {
         return calculator.calculate(id, request);
     }
 
+    @PostMapping("/{id}/close")
+    public PayrollDtos.Response close(@PathVariable("id") UUID id) {
+        return payrollService.close(id);
+    }
+
     @GetMapping("/{id}")
     public PayrollDtos.Response findById(@PathVariable("id") UUID id) {
         return payrollService.findById(id);
