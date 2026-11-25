@@ -18,6 +18,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.client.RestClient;
 
+import com.payrollsevice.payroll_service.attendanceSummary.dto.AttendanceSummaryDtos;
+import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.personnel.PersonnelClient;
 import com.payrollsevice.payroll_service.personnel.PersonnelUnavailableException;
 import com.payrollsevice.payroll_service.personnel.dto.PersonnelPayrollInput;
@@ -25,6 +27,8 @@ import com.payrollsevice.payroll_service.processing.dto.PayrollDtos;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.model.PayrollType;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
+import com.payrollsevice.payroll_service.rubric.dto.RubricDtos;
+import com.payrollsevice.payroll_service.rubric.model.RubricType;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
@@ -96,6 +100,57 @@ class PayrollControllerTests {
     void returnsNotFoundForUnknownPayroll() {
         assertThat(client().get().uri("/payroll/{id}", UUID.randomUUID())
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
+    }
+
+    @Test
+    void previewsProportionalSalaryOvertimeAndAbsence() {
+        UUID companyId = UUID.randomUUID();
+        UUID contractId = UUID.randomUUID();
+        YearMonth month = YearMonth.of(2026, 11);
+        var start = month.atDay(16);
+        var end = month.atEndOfMonth();
+        var salaries = List.of(
+            new PersonnelPayrollInput.SalaryPeriod(start, month.atDay(20), new BigDecimal("3000")),
+            new PersonnelPayrollInput.SalaryPeriod(month.atDay(21), end, new BigDecimal("3600")));
+        var contract = new PersonnelPayrollInput.Contract(contractId, UUID.randomUUID(), "Jane Doe", "001",
+            start, null, start, end, 200, salaries);
+        when(personnelClient.getPayrollInputs(companyId, month))
+            .thenReturn(new PersonnelPayrollInput(companyId, month, List.of(contract)));
+
+        RestClient http = client();
+        var payroll = http.post().uri("/payroll")
+            .body(new PayrollDtos.CreateRequest(companyId, month, PayrollType.REGULAR))
+            .retrieve().body(PayrollDtos.Response.class);
+        UUID salary = createRubric(http, companyId, "SALARY", RubricType.EARNING);
+        UUID overtime = createRubric(http, companyId, "OVERTIME", RubricType.EARNING);
+        UUID absence = createRubric(http, companyId, "ABSENCE", RubricType.DEDUCTION);
+        var request = new PayrollDtos.CalculationRequest(salary, overtime, absence, new BigDecimal("1.50"));
+        String route = "/payroll/{id}/calculation-preview";
+
+        assertThat(http.post().uri(route, payroll.id()).body(request)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(422);
+        http.post().uri("/attendance-summary")
+            .body(new AttendanceSummaryDtos.Request(contractId, month, 6000L, 120L, 60L))
+            .retrieve().toBodilessEntity();
+
+        var preview = http.post().uri(route, payroll.id()).body(request)
+            .retrieve().body(PayslipDtos.Preview[].class);
+        assertThat(preview).singleElement().satisfies(payslip -> {
+            assertThat(payslip.contractId()).isEqualTo(contractId);
+            assertThat(payslip.appliedBaseSalary()).isEqualByComparingTo("1700.00");
+            assertThat(payslip.totalEarnings()).isEqualByComparingTo("1751.00");
+            assertThat(payslip.totalDeductions()).isEqualByComparingTo("17.00");
+            assertThat(payslip.netPay()).isEqualByComparingTo("1734.00");
+            assertThat(payslip.items()).extracting(PayslipDtos.ItemResponse::rubricId)
+                .containsExactly(salary, overtime, absence);
+        });
+        assertThat(repository.findById(payroll.id()).orElseThrow().getStatus()).isEqualTo(PayrollStatus.DRAFT);
+    }
+
+    private static UUID createRubric(RestClient http, UUID companyId, String code, RubricType type) {
+        return http.post().uri("/rubric")
+            .body(new RubricDtos.Request(companyId, code, code, type, false, false, false))
+            .retrieve().body(RubricDtos.Response.class).id();
     }
 
     private RestClient client() {
