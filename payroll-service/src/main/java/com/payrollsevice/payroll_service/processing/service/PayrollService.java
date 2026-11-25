@@ -86,6 +86,18 @@ public class PayrollService {
         return PayrollDtos.Response.from(requirePayroll(id));
     }
 
+    @Transactional
+    public PayrollDtos.Response close(UUID id) {
+        Payroll payroll = repository.findForUpdateById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        if (payroll.getStatus() != PayrollStatus.CALCULATED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only calculated payrolls can be closed.");
+        }
+
+        payroll.setStatus(PayrollStatus.CLOSED);
+        return PayrollDtos.Response.from(payroll);
+    }
+
     private Payroll requirePayroll(UUID id) {
         return repository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
