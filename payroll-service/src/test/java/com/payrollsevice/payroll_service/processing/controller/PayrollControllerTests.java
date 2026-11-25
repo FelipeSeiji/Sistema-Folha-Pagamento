@@ -145,6 +145,21 @@ class PayrollControllerTests {
                 .containsExactly(salary, overtime, absence);
         });
         assertThat(repository.findById(payroll.id()).orElseThrow().getStatus()).isEqualTo(PayrollStatus.DRAFT);
+        var calculated = http.post().uri("/payroll/{id}/calculate", payroll.id()).body(request)
+            .retrieve().body(PayslipDtos.Response[].class);
+        assertThat(calculated).singleElement().satisfies(payslip -> {
+            assertThat(payslip.id()).isNotNull();
+            assertThat(payslip.contractId()).isEqualTo(contractId);
+            assertThat(payslip.netPay()).isEqualByComparingTo(preview[0].netPay());
+            var persisted = http.get().uri("/payslip/{id}", payslip.id())
+                .retrieve().body(PayslipDtos.Response.class);
+            assertThat(persisted.netPay()).isEqualByComparingTo(payslip.netPay());
+            assertThat(persisted.items()).extracting(PayslipDtos.ItemResponse::rubricId)
+                .containsExactly(salary, overtime, absence);
+        });
+        assertThat(repository.findById(payroll.id()).orElseThrow().getStatus()).isEqualTo(PayrollStatus.CALCULATED);
+        assertThat(http.post().uri("/payroll/{id}/calculate", payroll.id()).body(request)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
     }
 
     private static UUID createRubric(RestClient http, UUID companyId, String code, RubricType type) {
