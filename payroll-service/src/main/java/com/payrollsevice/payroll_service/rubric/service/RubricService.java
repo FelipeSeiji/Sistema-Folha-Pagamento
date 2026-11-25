@@ -40,6 +40,11 @@ public class RubricService {
         return RubricDtos.Response.from(entity);
     }
 
+    @Transactional
+    public void delete(UUID id) {
+        repository.delete(requireRubric(id));
+    }
+
     @Transactional(readOnly = true)
     public Page<RubricDtos.Response> list(Pageable pageable) {
         return repository.findAll(pageable).map(RubricDtos.Response::from);
