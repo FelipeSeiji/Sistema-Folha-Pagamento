@@ -8,6 +8,10 @@ import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +24,7 @@ import org.springframework.web.client.RestClient;
 
 import com.payrollsevice.payroll_service.attendanceSummary.dto.AttendanceSummaryDtos;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
+import com.payrollsevice.payroll_service.payslip.model.Payslip;
 import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
 import com.payrollsevice.payroll_service.personnel.PersonnelClient;
 import com.payrollsevice.payroll_service.personnel.PersonnelUnavailableException;
@@ -183,6 +188,35 @@ class PayrollControllerTests {
             assertThat(payslip.getContractId()).isEqualTo(fixture.secondContractId());
             assertThat(payslip.getNetPay()).isEqualByComparingTo("2500.00");
         });
+    }
+
+    @Test
+    void concurrentCalculationRequestsCreateOnlyOnePayslipPerContract() throws Exception {
+        var fixture = prepareCalculation();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<Integer> calculate = () -> {
+            ready.countDown();
+            if (!start.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Calculation start signal timed out.");
+            }
+            return calculateStatus(fixture);
+        };
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(calculate);
+            var second = executor.submit(calculate);
+            boolean bothReady = ready.await(10, TimeUnit.SECONDS);
+            start.countDown();
+            assertThat(bothReady).isTrue();
+            assertThat(List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder(200, 409);
+        }
+
+        assertThat(repository.findById(fixture.payrollId()).orElseThrow().getStatus())
+            .isEqualTo(PayrollStatus.CALCULATED);
+        assertThat(payslipRepository.findByPayrollId(fixture.payrollId())).extracting(Payslip::getContractId)
+            .containsExactlyInAnyOrder(fixture.firstContractId(), fixture.secondContractId());
     }
 
     private int calculateStatus(CalculationFixture fixture) {
