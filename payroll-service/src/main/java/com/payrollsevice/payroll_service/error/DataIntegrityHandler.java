@@ -8,12 +8,16 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
-public class UniqueConstraintHandler {
+public class DataIntegrityHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handle(DataIntegrityViolationException exception) {
-        if (exception.getCause() instanceof ConstraintViolationException violation
-                && "23505".equals(violation.getSQLState())) {
-            return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "A record with this key already exists.");
+        if (exception.getCause() instanceof ConstraintViolationException violation) {
+            if ("23505".equals(violation.getSQLState())) {
+                return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "A record with this key already exists.");
+            }
+            if ("23503".equals(violation.getSQLState())) {
+                return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "The operation conflicts with a related record.");
+            }
         }
         throw exception;
     }
