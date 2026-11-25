@@ -20,7 +20,7 @@ class AttendanceSummaryControllerTests {
     private int port;
 
     @Test
-    void createsAndReadsAttendanceForTheContractAndPeriod() {
+    void createsReadsAndUpdatesAttendanceForTheContractAndPeriod() {
         RestClient client = RestClient.create("http://127.0.0.1:" + port);
         var request = new AttendanceSummaryDtos.Request(UUID.randomUUID(), YearMonth.of(2026, 11), 9600L, 60L, 0L);
         var created = client.post().uri("/attendance-summary").body(request)
@@ -35,5 +35,12 @@ class AttendanceSummaryControllerTests {
         assertThat(client.get().uri("/attendance-summary").retrieve().body(String.class)).contains(body.id().toString());
         assertThat(client.post().uri("/attendance-summary").body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+
+        var update = new AttendanceSummaryDtos.Request(request.contractId(), request.period(), 9300L, 0L, 300L);
+        var updated = client.put().uri("/attendance-summary/{id}", body.id()).body(update)
+            .retrieve().body(AttendanceSummaryDtos.Response.class);
+        assertThat(updated.absenceMinutes()).isEqualTo(300L);
+        assertThat(client.get().uri("/attendance-summary/{id}", body.id()).retrieve()
+            .body(AttendanceSummaryDtos.Response.class)).isEqualTo(updated);
     }
 }
