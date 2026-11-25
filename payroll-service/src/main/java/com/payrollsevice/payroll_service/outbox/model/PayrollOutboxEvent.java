@@ -15,6 +15,7 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "TB_PAYROLL_OUTBOX")
@@ -40,6 +41,7 @@ public class PayrollOutboxEvent {
     @Column(nullable = false, updatable = false)
     private Instant occurredAt;
 
+    @Setter
     private Instant publishedAt;
 
     public PayrollOutboxEvent(UUID payrollId, UUID companyId, YearMonth period, Instant occurredAt) {
