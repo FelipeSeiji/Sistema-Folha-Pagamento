@@ -17,6 +17,7 @@ import org.springframework.web.client.RestClient;
 
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.processing.model.Payroll;
+import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.model.PayrollType;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
 import com.payrollsevice.payroll_service.rubric.dto.RubricDtos;
@@ -32,7 +33,7 @@ class PayslipControllerTests {
     private PayrollRepository payrollRepository;
 
     @Test
-    void createsAndReadsPayslipWithOrderedItems() {
+    void createsReadsAndUpdatesPayslipWithOrderedItems() {
         UUID companyId = UUID.randomUUID();
         UUID contractId = UUID.randomUUID();
         LocalDate period = LocalDate.of(2026, 11, 1);
@@ -69,6 +70,27 @@ class PayslipControllerTests {
             .containsExactly(salary.id(), discount.id());
         assertThat(client.get().uri("/payslip").retrieve().body(String.class)).contains(payslipId.toString());
         assertThat(client.post().uri("/payslip").body(request)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+
+        var updatedRubric = new RubricDtos.Request(companyId, "001", "Updated Salary", RubricType.EARNING,
+            false, false, false);
+        assertThat(client.put().uri("/rubric/{id}", salary.id()).body(updatedRubric)
+            .retrieve().body(RubricDtos.Response.class).description()).isEqualTo("Updated Salary");
+
+        var update = new PayslipDtos.Request(payroll.getId(), contractId, new BigDecimal("3100.00"), List.of(
+            new PayslipDtos.ItemRequest(salary.id(), null, new BigDecimal("3100.00"))));
+        var updated = client.put().uri("/payslip/{id}", payslipId).body(update)
+            .retrieve().body(PayslipDtos.Response.class);
+        assertThat(updated.netPay()).isEqualByComparingTo("3100.00");
+
+        var reloaded = client.get().uri("/payslip/{id}", payslipId)
+            .retrieve().body(PayslipDtos.Response.class);
+        assertThat(reloaded.items()).extracting(PayslipDtos.ItemResponse::appliedDescription)
+            .containsExactly("Updated Salary");
+
+        payroll.setStatus(PayrollStatus.CLOSED);
+        payrollRepository.saveAndFlush(payroll);
+        assertThat(client.put().uri("/payslip/{id}", payslipId).body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
     }
 }
