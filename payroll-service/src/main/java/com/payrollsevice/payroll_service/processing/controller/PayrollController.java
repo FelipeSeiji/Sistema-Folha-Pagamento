@@ -1,6 +1,7 @@
 package com.payrollsevice.payroll_service.processing.controller;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.domain.Pageable;
@@ -16,8 +17,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.processing.dto.PayrollDtos;
 import com.payrollsevice.payroll_service.processing.service.PayrollService;
+import com.payrollsevice.payroll_service.processing.service.RegularPayrollCalculator;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PayrollController {
     private final PayrollService payrollService;
+    private final RegularPayrollCalculator calculator;
 
     @PostMapping
     public ResponseEntity<PayrollDtos.Response> create(@Valid @RequestBody PayrollDtos.CreateRequest request) {
@@ -42,6 +46,12 @@ public class PayrollController {
     @GetMapping
     public PagedModel<PayrollDtos.Response> list(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
         return new PagedModel<>(payrollService.list(pageable));
+    }
+
+    @PostMapping("/{id}/calculation-preview")
+    public List<PayslipDtos.Preview> preview(@PathVariable("id") UUID id,
+                                           @Valid @RequestBody PayrollDtos.CalculationRequest request) {
+        return calculator.preview(id, request);
     }
 
     @GetMapping("/{id}")
