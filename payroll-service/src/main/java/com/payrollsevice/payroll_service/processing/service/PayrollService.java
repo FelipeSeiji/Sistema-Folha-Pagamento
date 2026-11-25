@@ -2,6 +2,7 @@ package com.payrollsevice.payroll_service.processing.service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.UUID;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -13,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.payrollsevice.payroll_service.outbox.model.PayrollOutboxEvent;
+import com.payrollsevice.payroll_service.outbox.repository.PayrollOutboxRepository;
 import com.payrollsevice.payroll_service.personnel.PersonnelClient;
 import com.payrollsevice.payroll_service.personnel.PersonnelInputConflictException;
 import com.payrollsevice.payroll_service.personnel.PersonnelUnavailableException;
@@ -30,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 public class PayrollService {
     private final PayrollRepository repository;
     private final PersonnelClient personnelClient;
+    private final PayrollOutboxRepository outboxRepository;
 
     public PayrollDtos.Response create(PayrollDtos.CreateRequest request) {
         LocalDate period = request.period().atDay(1);
@@ -95,6 +99,8 @@ public class PayrollService {
         }
 
         payroll.setStatus(PayrollStatus.CLOSED);
+        outboxRepository.saveAndFlush(new PayrollOutboxEvent(id, payroll.getCompanyId(),
+            YearMonth.from(payroll.getPeriod()), Instant.now()));
         return PayrollDtos.Response.from(payroll);
     }
 
