@@ -20,6 +20,7 @@ import org.springframework.web.client.RestClient;
 
 import com.payrollsevice.payroll_service.attendanceSummary.dto.AttendanceSummaryDtos;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
+import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
 import com.payrollsevice.payroll_service.personnel.PersonnelClient;
 import com.payrollsevice.payroll_service.personnel.PersonnelUnavailableException;
 import com.payrollsevice.payroll_service.personnel.dto.PersonnelPayrollInput;
@@ -41,6 +42,9 @@ class PayrollControllerTests {
 
     @Autowired
     private PayrollRepository repository;
+
+    @Autowired
+    private PayslipRepository payslipRepository;
 
     @Test
     void createsAndReadsDraftWithPersistedSnapshot() {
@@ -160,6 +164,65 @@ class PayrollControllerTests {
         assertThat(repository.findById(payroll.id()).orElseThrow().getStatus()).isEqualTo(PayrollStatus.CALCULATED);
         assertThat(http.post().uri("/payroll/{id}/calculate", payroll.id()).body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+    }
+
+    @Test
+    void rollsBackAllChangesWhenTheSecondPayslipConflicts() {
+        var fixture = prepareCalculation();
+        var request = new PayslipDtos.Request(fixture.payrollId(), fixture.secondContractId(),
+            new BigDecimal("2500.00"), List.of(new PayslipDtos.ItemRequest(
+                fixture.request().salaryRubricId(), null, new BigDecimal("2500.00"))));
+        var manual = client().post().uri("/payslip").body(request)
+            .retrieve().body(PayslipDtos.Response.class);
+
+        assertThat(calculateStatus(fixture)).isEqualTo(409);
+        assertThat(repository.findById(fixture.payrollId()).orElseThrow().getStatus())
+            .isEqualTo(PayrollStatus.DRAFT);
+        assertThat(payslipRepository.findByPayrollId(fixture.payrollId())).singleElement().satisfies(payslip -> {
+            assertThat(payslip.getId()).isEqualTo(manual.id());
+            assertThat(payslip.getContractId()).isEqualTo(fixture.secondContractId());
+            assertThat(payslip.getNetPay()).isEqualByComparingTo("2500.00");
+        });
+    }
+
+    private int calculateStatus(CalculationFixture fixture) {
+        return client().post().uri("/payroll/{id}/calculate", fixture.payrollId()).body(fixture.request())
+            .exchange((sent, response) -> response.getStatusCode().value());
+    }
+
+    private CalculationFixture prepareCalculation() {
+        UUID companyId = UUID.randomUUID();
+        YearMonth month = YearMonth.of(2026, 11);
+        var start = month.atDay(1);
+        var end = month.atEndOfMonth();
+        var salaryPeriods = List.of(new PersonnelPayrollInput.SalaryPeriod(start, end, new BigDecimal("3000.00")));
+        var contracts = List.of("001", "002").stream().map(registration ->
+            new PersonnelPayrollInput.Contract(UUID.randomUUID(), UUID.randomUUID(), "Employee " + registration,
+                registration, start, null, start, end, 200, salaryPeriods)).toList();
+        when(personnelClient.getPayrollInputs(companyId, month))
+            .thenReturn(new PersonnelPayrollInput(companyId, month, contracts));
+
+        RestClient http = client();
+        var payroll = http.post().uri("/payroll")
+            .body(new PayrollDtos.CreateRequest(companyId, month, PayrollType.REGULAR))
+            .retrieve().body(PayrollDtos.Response.class);
+        for (var contract : contracts) {
+            http.post().uri("/attendance-summary")
+                .body(new AttendanceSummaryDtos.Request(contract.contractId(), month, 12000L, 0L, 0L))
+                .retrieve().toBodilessEntity();
+        }
+
+        var request = new PayrollDtos.CalculationRequest(
+            createRubric(http, companyId, "SALARY", RubricType.EARNING),
+            createRubric(http, companyId, "OVERTIME", RubricType.EARNING),
+            createRubric(http, companyId, "ABSENCE", RubricType.DEDUCTION), new BigDecimal("1.50"));
+        return new CalculationFixture(payroll.id(), contracts.getFirst().contractId(), contracts.getLast().contractId(),
+            request);
+    }
+
+    private record CalculationFixture(
+        UUID payrollId, UUID firstContractId, UUID secondContractId, PayrollDtos.CalculationRequest request
+    ) {
     }
 
     private static UUID createRubric(RestClient http, UUID companyId, String code, RubricType type) {
