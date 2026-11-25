@@ -26,10 +26,20 @@ public class AttendanceSummaryService {
         AttendanceSummary entity = new AttendanceSummary();
         entity.setContractId(request.contractId());
         entity.setPeriod(request.period().atDay(1));
-        entity.setWorkedMinutes(request.workedMinutes());
-        entity.setOvertimeMinutes(request.overtimeMinutes());
-        entity.setAbsenceMinutes(request.absenceMinutes());
+        applyChanges(entity, request);
         return AttendanceSummaryDtos.Response.from(repository.saveAndFlush(entity));
+    }
+
+    @Transactional
+    public AttendanceSummaryDtos.Response update(UUID id, AttendanceSummaryDtos.Request request) {
+        AttendanceSummary entity = requireAttendanceSummary(id);
+        if (!entity.getContractId().equals(request.contractId())
+                || !entity.getPeriod().equals(request.period().atDay(1))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Attendance contract and period cannot be changed.");
+        }
+        applyChanges(entity, request);
+        repository.flush();
+        return AttendanceSummaryDtos.Response.from(entity);
     }
 
     @Transactional(readOnly = true)
@@ -39,8 +49,17 @@ public class AttendanceSummaryService {
 
     @Transactional(readOnly = true)
     public AttendanceSummaryDtos.Response findById(UUID id) {
+        return AttendanceSummaryDtos.Response.from(requireAttendanceSummary(id));
+    }
+
+    private AttendanceSummary requireAttendanceSummary(UUID id) {
         return repository.findById(id)
-            .map(AttendanceSummaryDtos.Response::from)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Attendance summary not found."));
+    }
+
+    private static void applyChanges(AttendanceSummary entity, AttendanceSummaryDtos.Request request) {
+        entity.setWorkedMinutes(request.workedMinutes());
+        entity.setOvertimeMinutes(request.overtimeMinutes());
+        entity.setAbsenceMinutes(request.absenceMinutes());
     }
 }
