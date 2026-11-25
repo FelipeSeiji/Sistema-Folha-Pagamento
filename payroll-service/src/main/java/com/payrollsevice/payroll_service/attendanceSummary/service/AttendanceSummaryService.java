@@ -42,6 +42,11 @@ public class AttendanceSummaryService {
         return AttendanceSummaryDtos.Response.from(entity);
     }
 
+    @Transactional
+    public void delete(UUID id) {
+        repository.delete(requireAttendanceSummary(id));
+    }
+
     @Transactional(readOnly = true)
     public Page<AttendanceSummaryDtos.Response> list(Pageable pageable) {
         return repository.findAll(pageable).map(AttendanceSummaryDtos.Response::from);
