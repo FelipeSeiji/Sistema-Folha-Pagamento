@@ -219,6 +219,27 @@ class PayrollControllerTests {
             .containsExactlyInAnyOrder(fixture.firstContractId(), fixture.secondContractId());
     }
 
+    @Test
+    void closesOnlyCalculatedPayrolls() {
+        var fixture = prepareCalculation();
+        RestClient http = client();
+        String route = "/payroll/{id}/close";
+        UUID payrollId = fixture.payrollId();
+
+        assertThat(http.post().uri(route, UUID.randomUUID())
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
+        assertThat(http.post().uri(route, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+
+        var closed = http.post().uri(route, payrollId).retrieve().toEntity(PayrollDtos.Response.class);
+        assertThat(closed.getStatusCode().value()).isEqualTo(200);
+        assertThat(closed.getBody().status()).isEqualTo(PayrollStatus.CLOSED);
+        assertThat(repository.findById(payrollId).orElseThrow().getStatus()).isEqualTo(PayrollStatus.CLOSED);
+        assertThat(http.post().uri(route, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+    }
+
     private int calculateStatus(CalculationFixture fixture) {
         return client().post().uri("/payroll/{id}/calculate", fixture.payrollId()).body(fixture.request())
             .exchange((sent, response) -> response.getStatusCode().value());
