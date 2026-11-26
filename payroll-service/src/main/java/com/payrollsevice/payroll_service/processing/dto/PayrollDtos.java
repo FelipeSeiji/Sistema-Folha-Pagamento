@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.YearMonth;
 import java.util.UUID;
 
+import com.payrollsevice.payroll_service.processing.model.ClosedPayrollSummary;
 import com.payrollsevice.payroll_service.processing.model.Payroll;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.model.PayrollType;
@@ -25,6 +26,15 @@ public final class PayrollDtos {
         @NotNull UUID absenceRubricId,
         @NotNull @DecimalMin("1") @Digits(integer = 3, fraction = 4) BigDecimal overtimeMultiplier
     ) {
+    }
+
+    public record SummaryResponse(
+        YearMonth period, long payslipCount, BigDecimal totalEarnings, BigDecimal totalDeductions, BigDecimal netPay
+    ) {
+        public static SummaryResponse from(ClosedPayrollSummary summary) {
+            return new SummaryResponse(YearMonth.from(summary.getPeriod()), summary.getPayslipCount(),
+                summary.getTotalEarnings(), summary.getTotalDeductions(), summary.getNetPay());
+        }
     }
 
     public record Response(UUID id, UUID companyId, YearMonth period, PayrollType type, PayrollStatus status) {

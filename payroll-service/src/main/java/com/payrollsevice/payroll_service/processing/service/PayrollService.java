@@ -3,6 +3,7 @@ package com.payrollsevice.payroll_service.processing.service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -24,6 +25,7 @@ import com.payrollsevice.payroll_service.processing.dto.PayrollDtos;
 import com.payrollsevice.payroll_service.processing.model.Payroll;
 import com.payrollsevice.payroll_service.processing.model.Payroll.Snapshot;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
+import com.payrollsevice.payroll_service.processing.repository.ClosedPayrollSummaryRepository;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,7 @@ public class PayrollService {
     private final PayrollRepository repository;
     private final PersonnelClient personnelClient;
     private final PayrollOutboxRepository outboxRepository;
+    private final ClosedPayrollSummaryRepository summaryRepository;
 
     public PayrollDtos.Response create(PayrollDtos.CreateRequest request) {
         LocalDate period = request.period().atDay(1);
@@ -102,6 +105,16 @@ public class PayrollService {
         outboxRepository.saveAndFlush(new PayrollOutboxEvent(id, payroll.getCompanyId(),
             YearMonth.from(payroll.getPeriod()), Instant.now()));
         return PayrollDtos.Response.from(payroll);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PayrollDtos.SummaryResponse> findSummary(UUID id) {
+        Payroll payroll = requirePayroll(id);
+        if (payroll.getStatus() != PayrollStatus.CLOSED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to have a summary.");
+        }
+
+        return summaryRepository.findById(id).map(PayrollDtos.SummaryResponse::from);
     }
 
     private Payroll requirePayroll(UUID id) {
