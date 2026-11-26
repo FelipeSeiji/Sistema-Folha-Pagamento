@@ -2,7 +2,10 @@ package com.personnelservice.personnel_service.domain.employmentContract.service
 
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -17,6 +20,8 @@ import com.personnelservice.personnel_service.domain.employmentContract.model.Em
 import com.personnelservice.personnel_service.domain.employmentContract.repository.EmploymentContractRepository;
 
 import com.personnelservice.personnel_service.domain.salaryHistory.repository.SalaryHistoryRepository;
+
+import com.personnelservice.personnel_service.security.PersonnelCompanyAccess;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -34,7 +39,8 @@ public class EmploymentContractService {
     private final SalaryHistoryRepository salaryHistoryRepository;
 
     @Transactional
-    public EmploymentContractDtos.Response create(@NotNull @Valid EmploymentContractDtos.Request request) {
+    public EmploymentContractDtos.Response create(@NotNull @Valid EmploymentContractDtos.Request request, Jwt principal) {
+        PersonnelCompanyAccess.require(principal, request.companyId());
         var employee = employeeRepository.findLockedById(request.employeeId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found."));
         var company = companyRepository.findLockedById(request.companyId())
@@ -64,10 +70,11 @@ public class EmploymentContractService {
 
     @Transactional
     public EmploymentContractDtos.Response terminate(
-        UUID id, @NotNull @Valid EmploymentContractDtos.TerminationRequest request
+        UUID id, @NotNull @Valid EmploymentContractDtos.TerminationRequest request, Jwt principal
     ) {
         var contract = employmentContractRepository.findLockedById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employment contract not found."));
+        PersonnelCompanyAccess.require(principal, contract.getCompany().getId());
         var date = request.terminationDate();
         if (date.isBefore(contract.getHireDate())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Termination cannot precede the hire date.");
@@ -87,6 +94,16 @@ public class EmploymentContractService {
         }
         contract.setTerminationDate(date);
         return EmploymentContractDtos.Response.from(contract);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<EmploymentContractDtos.Response> list(Jwt principal, Pageable pageable) {
+        var companies = PersonnelCompanyAccess.companyIds(principal);
+        if (companies.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return employmentContractRepository.findByCompanyIdIn(companies, pageable)
+            .map(EmploymentContractDtos.Response::from);
     }
 
     @Transactional(readOnly = true)
