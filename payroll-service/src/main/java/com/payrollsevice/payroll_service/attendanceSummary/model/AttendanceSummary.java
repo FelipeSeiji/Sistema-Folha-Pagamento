@@ -25,6 +25,8 @@ public class AttendanceSummary {
     @Column(name = "contract_id", nullable = false)
     private UUID contractId;
 
+    private UUID companyId;
+
     @Column(nullable = false)
     private LocalDate period;
 
