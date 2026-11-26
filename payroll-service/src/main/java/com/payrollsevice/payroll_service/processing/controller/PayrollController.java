@@ -62,9 +62,11 @@ public class PayrollController {
     }
 
     @PostMapping("/{id}/calculation-preview")
-    public List<PayslipDtos.Preview> preview(@PathVariable("id") UUID id,
-                                           @Valid @RequestBody PayrollDtos.CalculationRequest request) {
-        return calculator.preview(id, request);
+    public List<PayslipDtos.Preview> preview(
+        @PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal,
+        @Valid @RequestBody PayrollDtos.CalculationRequest request
+    ) {
+        return calculator.preview(id, request, principal);
     }
 
     @PostMapping("/{id}/calculate")

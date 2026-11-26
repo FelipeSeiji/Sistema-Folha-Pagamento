@@ -43,9 +43,10 @@ public class RegularPayrollCalculator {
     private final RubricRepository rubricRepository;
 
     @Transactional(readOnly = true)
-    public List<PayslipDtos.Preview> preview(UUID payrollId, CalculationRequest request) {
+    public List<PayslipDtos.Preview> preview(UUID payrollId, CalculationRequest request, Jwt principal) {
         Payroll payroll = payrollRepository.findById(payrollId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         return calculatePayslips(payroll, request).stream().map(PayslipDtos.Preview::from).toList();
     }
 
