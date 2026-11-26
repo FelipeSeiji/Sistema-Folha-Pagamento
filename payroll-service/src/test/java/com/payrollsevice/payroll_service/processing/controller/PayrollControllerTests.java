@@ -320,6 +320,16 @@ class PayrollControllerTests {
         assertThat(summary.getTotalEarnings()).isEqualByComparingTo("6000.00");
         assertThat(summary.getTotalDeductions()).isEqualByComparingTo("0.00");
         assertThat(summary.getNetPay()).isEqualByComparingTo("6000.00");
+
+        var response = client().get().uri("/payroll/{id}/summary", payrollId)
+            .retrieve().toEntity(PayrollDtos.SummaryResponse.class);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        var body = response.getBody();
+        assertThat(body.period()).isEqualTo(event.getPayload().period());
+        assertThat(body.payslipCount()).isEqualTo(2);
+        assertThat(body.totalEarnings()).isEqualByComparingTo("6000.00");
+        assertThat(body.totalDeductions()).isEqualByComparingTo("0.00");
+        assertThat(body.netPay()).isEqualByComparingTo("6000.00");
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
