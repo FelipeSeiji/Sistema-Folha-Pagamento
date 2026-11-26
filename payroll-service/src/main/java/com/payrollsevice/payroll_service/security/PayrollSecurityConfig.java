@@ -37,7 +37,9 @@ public class PayrollSecurityConfig {
                 paths.matcher("/payroll/*/finance-report"), paths.matcher("/payroll/*/finance-report.csv"),
                 paths.matcher("/payroll/*/calculate"), paths.matcher("/payroll/*/close"),
                 paths.matcher(HttpMethod.GET, "/payslip"), paths.matcher(HttpMethod.GET, "/payslip/{id}"),
-                paths.matcher(HttpMethod.HEAD, "/payslip"), paths.matcher(HttpMethod.HEAD, "/payslip/{id}")))
+                paths.matcher(HttpMethod.HEAD, "/payslip"), paths.matcher(HttpMethod.HEAD, "/payslip/{id}"),
+                paths.matcher(HttpMethod.GET, "/payslip/{id}/document"),
+                paths.matcher(HttpMethod.HEAD, "/payslip/{id}/document")))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(requests -> requests.anyRequest().hasRole("FINANCE"))

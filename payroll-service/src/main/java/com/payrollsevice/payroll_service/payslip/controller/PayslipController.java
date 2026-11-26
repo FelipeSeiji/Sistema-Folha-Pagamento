@@ -6,6 +6,12 @@ import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -57,6 +63,24 @@ public class PayslipController {
     @GetMapping("/{id}")
     public PayslipDtos.Response findById(@PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal) {
         return service.findById(id, principal);
+    }
+
+    @GetMapping("/{id}/document")
+    public ResponseEntity<?> downloadDocument(@PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal) {
+        var document = service.findDocument(id, principal);
+        if (document.isEmpty()) {
+            var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+                "The payslip PDF is not available yet.");
+            return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore()).body(problem);
+        }
+
+        byte[] pdf = document.orElseThrow();
+        var attachment = ContentDisposition.attachment().filename("payslip-" + id + ".pdf").build();
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, attachment.toString())
+            .cacheControl(CacheControl.noStore())
+            .body(pdf);
     }
 
     @DeleteMapping("/{id}")

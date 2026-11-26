@@ -3,6 +3,7 @@ package com.payrollsevice.payroll_service.payslip.service;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
@@ -13,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.payrollsevice.payroll_service.payslip.document.PayslipDocument;
+import com.payrollsevice.payroll_service.payslip.document.PayslipDocumentRepository;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.payslip.model.Payslip;
 import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
@@ -31,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PayslipService {
     private final PayslipRepository repository;
+    private final PayslipDocumentRepository documents;
     private final PayrollRepository payrollRepository;
     private final RubricRepository rubricRepository;
 
@@ -121,10 +125,20 @@ public class PayslipService {
 
     @Transactional(readOnly = true)
     public PayslipDtos.Response findById(UUID id, Jwt principal) {
+        return PayslipDtos.Response.from(requireCompanyPayslip(id, principal));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<byte[]> findDocument(UUID id, Jwt principal) {
+        requireCompanyPayslip(id, principal);
+        return documents.findById(id).map(PayslipDocument::getPdf);
+    }
+
+    private Payslip requireCompanyPayslip(UUID id, Jwt principal) {
         Payslip payslip = repository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payslip not found."));
         PayrollCompanyAccess.require(principal, payslip.getPayroll().getCompanyId());
-        return PayslipDtos.Response.from(payslip);
+        return payslip;
     }
 
     private Payslip requirePayslipForUpdate(UUID id) {

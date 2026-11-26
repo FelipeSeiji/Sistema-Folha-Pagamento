@@ -28,6 +28,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -370,6 +371,16 @@ class PayrollControllerTests {
         assertThat(calculateStatus(fixture)).isEqualTo(200);
         financeClient(fixture.payrollId()).post().uri("/payroll/{id}/close", fixture.payrollId()).retrieve().toBodilessEntity();
         UUID payslipId = payslipRepository.findIdsByPayrollId(fixture.payrollId()).getFirst();
+        RestClient finance = financeClient(fixture.payrollId());
+        String route = "/payslip/{id}/document";
+        assertThat(finance.get().uri(route, UUID.randomUUID())
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
+        finance.get().uri(route, payslipId).exchange((sent, response) -> {
+            assertThat(response.getStatusCode().value()).isEqualTo(409);
+            String problem = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+            assertThat(problem).contains("The payslip PDF is not available yet.");
+            return null;
+        });
 
         jdbc.execute("ALTER TABLE tb_payslip_document ADD CONSTRAINT ck_test_reject_document "
             + "CHECK (payslip_id <> CAST('" + payslipId + "' AS UUID))");
@@ -387,6 +398,28 @@ class PayrollControllerTests {
 
         documentWorker.generate(payslipId.toString());
         assertThat(documents.findById(payslipId).orElseThrow().getPdf()).isEqualTo(pdf);
+
+        when(jwtDecoder.decode("invalid-document-token")).thenThrow(new BadJwtException("Invalid test token."));
+        RestClient invalid = client().mutate().defaultHeaders(headers ->
+            headers.setBearerAuth("invalid-document-token")).build();
+        for (RestClient unauthenticated : List.of(client(), invalid)) {
+            assertThat(unauthenticated.get().uri(route, payslipId)
+                .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(401);
+        }
+        String company = repository.findById(fixture.payrollId()).orElseThrow().getCompanyId().toString();
+        RestClient hr = authenticatedClient("HR", List.of(company));
+        RestClient outside = authenticatedClient("FINANCE", List.of(UUID.randomUUID().toString()));
+        for (RestClient forbidden : List.of(hr, outside)) {
+            assertThat(forbidden.get().uri(route, payslipId)
+                .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(403);
+        }
+
+        var download = finance.get().uri(route, payslipId).retrieve().toEntity(byte[].class);
+        assertThat(download.getStatusCode().value()).isEqualTo(200);
+        assertThat(download.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
+        assertThat(download.getHeaders().getContentDisposition().getFilename()).isEqualTo("payslip-" + payslipId + ".pdf");
+        assertThat(download.getHeaders().getCacheControl()).isEqualTo("no-store");
+        assertThat(download.getBody()).isEqualTo(pdf);
     }
 
     @Test
