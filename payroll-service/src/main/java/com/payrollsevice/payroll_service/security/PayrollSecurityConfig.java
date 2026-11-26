@@ -8,6 +8,7 @@ import java.util.Objects;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -18,6 +19,8 @@ import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 
 @Configuration(proxyBeanMethods = false)
 public class PayrollSecurityConfig {
@@ -28,9 +31,13 @@ public class PayrollSecurityConfig {
 
     @Bean
     SecurityFilterChain financeSecurity(HttpSecurity http) {
+        var paths = PathPatternRequestMatcher.withDefaults();
         return http
-            .securityMatcher("/payroll/*/finance-report", "/payroll/*/finance-report.csv",
-                "/payroll/*/calculate", "/payroll/*/close")
+            .securityMatcher(new OrRequestMatcher(
+                paths.matcher("/payroll/*/finance-report"), paths.matcher("/payroll/*/finance-report.csv"),
+                paths.matcher("/payroll/*/calculate"), paths.matcher("/payroll/*/close"),
+                paths.matcher(HttpMethod.GET, "/payslip"), paths.matcher(HttpMethod.GET, "/payslip/{id}"),
+                paths.matcher(HttpMethod.HEAD, "/payslip"), paths.matcher(HttpMethod.HEAD, "/payslip/{id}")))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(requests -> requests.anyRequest().hasRole("FINANCE"))

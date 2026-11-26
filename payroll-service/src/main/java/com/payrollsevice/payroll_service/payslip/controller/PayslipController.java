@@ -7,6 +7,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,8 +43,10 @@ public class PayslipController {
     }
 
     @GetMapping
-    public PagedModel<PayslipDtos.Response> list(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
-        return new PagedModel<>(service.list(pageable));
+    public PagedModel<PayslipDtos.Response> list(
+        @PageableDefault(size = 20, sort = "id") Pageable pageable, @AuthenticationPrincipal Jwt principal
+    ) {
+        return new PagedModel<>(service.list(pageable, principal));
     }
 
     @PutMapping("/{id}")
@@ -51,8 +55,8 @@ public class PayslipController {
     }
 
     @GetMapping("/{id}")
-    public PayslipDtos.Response findById(@PathVariable("id") UUID id) {
-        return service.findById(id);
+    public PayslipDtos.Response findById(@PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal) {
+        return service.findById(id, principal);
     }
 
     @DeleteMapping("/{id}")
