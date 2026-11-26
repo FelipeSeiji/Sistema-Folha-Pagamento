@@ -1,6 +1,7 @@
 package com.payrollsevice.payroll_service.processing.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -18,7 +19,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.client.RestClient;
@@ -69,6 +72,9 @@ class PayrollControllerTests {
 
     @Autowired
     private JsonMapper jsonMapper;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void createsAndReadsDraftWithPersistedSnapshot() {
@@ -282,7 +288,7 @@ class PayrollControllerTests {
     }
 
     @Test
-    void storesClosedPayrollTotalsAndTheProcessedEventId() {
+    void retriesFailedSummaryInsertAndIgnoresRedelivery() {
         var fixture = prepareCalculation();
         UUID payrollId = fixture.payrollId();
         assertThat(calculateStatus(fixture)).isEqualTo(200);
@@ -291,7 +297,19 @@ class PayrollControllerTests {
         var message = new PayrollClosedMessage(event.getId(), event.getEventType(), event.getOccurredAt(),
             event.getPayload());
 
-        closedConsumer.consume(jsonMapper.writeValueAsString(message));
+        String json = jsonMapper.writeValueAsString(message);
+        jdbc.execute("ALTER TABLE tb_closed_payroll_summary ADD CONSTRAINT ck_test_reject_payroll "
+            + "CHECK (payroll_id <> CAST('" + payrollId + "' AS UUID))");
+        try {
+            assertThatThrownBy(() -> closedConsumer.consume(json)).isInstanceOf(DataIntegrityViolationException.class);
+            assertThat(summaryRepository.findById(payrollId)).isEmpty();
+            assertThat(summaryRepository.existsByEventId(event.getId())).isFalse();
+        } finally {
+            jdbc.execute("ALTER TABLE tb_closed_payroll_summary DROP CONSTRAINT ck_test_reject_payroll");
+        }
+
+        closedConsumer.consume(json);
+        closedConsumer.consume(json);
 
         var summary = summaryRepository.findById(payrollId).orElseThrow();
         assertThat(summary.getEventId()).isEqualTo(event.getId());
