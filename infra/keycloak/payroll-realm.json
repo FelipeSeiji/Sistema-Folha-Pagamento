@@ -42,6 +42,16 @@
             "access.token.claim": "true",
             "id.token.claim": "false"
           }
+        },
+        {
+          "name": "Personnel service audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "personnel-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
         }
       ],
       "standardFlowEnabled": true,
