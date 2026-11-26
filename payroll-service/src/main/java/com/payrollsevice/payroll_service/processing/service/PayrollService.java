@@ -24,6 +24,7 @@ import com.payrollsevice.payroll_service.processing.dto.PayrollDtos;
 import com.payrollsevice.payroll_service.processing.model.Payroll;
 import com.payrollsevice.payroll_service.processing.model.Payroll.Snapshot;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
+import com.payrollsevice.payroll_service.processing.repository.ClosedPayrollSummaryRepository;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class PayrollService {
     private final PayrollRepository repository;
     private final PersonnelClient personnelClient;
     private final PayrollOutboxRepository outboxRepository;
+    private final ClosedPayrollSummaryRepository summaryRepository;
 
     public PayrollDtos.Response create(PayrollDtos.CreateRequest request) {
         LocalDate period = request.period().atDay(1);
@@ -102,6 +104,13 @@ public class PayrollService {
         outboxRepository.saveAndFlush(new PayrollOutboxEvent(id, payroll.getCompanyId(),
             YearMonth.from(payroll.getPeriod()), Instant.now()));
         return PayrollDtos.Response.from(payroll);
+    }
+
+    @Transactional(readOnly = true)
+    public PayrollDtos.SummaryResponse findSummary(UUID id) {
+        return summaryRepository.findById(id)
+            .map(PayrollDtos.SummaryResponse::from)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll summary not found."));
     }
 
     private Payroll requirePayroll(UUID id) {
