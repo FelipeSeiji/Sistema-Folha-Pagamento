@@ -77,8 +77,10 @@ public class PayrollController {
     }
 
     @PostMapping("/{id}/payslip-documents")
-    public ResponseEntity<Void> enqueuePayslipDocuments(@PathVariable("id") UUID id) {
-        documents.enqueue(id);
+    public ResponseEntity<Void> enqueuePayslipDocuments(
+        @PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal
+    ) {
+        documents.enqueue(id, principal);
         return ResponseEntity.accepted().build();
     }
 
