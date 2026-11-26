@@ -53,8 +53,10 @@ public class PayrollController {
     }
 
     @GetMapping
-    public PagedModel<PayrollDtos.Response> list(@PageableDefault(size = 20, sort = "id") Pageable pageable) {
-        return new PagedModel<>(payrollService.list(pageable));
+    public PagedModel<PayrollDtos.Response> list(
+        @PageableDefault(size = 20, sort = "id") Pageable pageable, @AuthenticationPrincipal Jwt principal
+    ) {
+        return new PagedModel<>(payrollService.list(pageable, principal));
     }
 
     @PostMapping("/{id}/calculation-preview")
@@ -105,8 +107,10 @@ public class PayrollController {
     }
 
     @GetMapping("/{id}/summary")
-    public ResponseEntity<PayrollDtos.SummaryResponse> findSummary(@PathVariable("id") UUID id) {
-        return payrollService.findSummary(id)
+    public ResponseEntity<PayrollDtos.SummaryResponse> findSummary(
+        @PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal
+    ) {
+        return payrollService.findSummary(id, principal)
             .map(ResponseEntity::ok)
             .orElseGet(() -> ResponseEntity.accepted()
                 .header(HttpHeaders.RETRY_AFTER, "5")
@@ -115,8 +119,8 @@ public class PayrollController {
     }
 
     @GetMapping("/{id}")
-    public PayrollDtos.Response findById(@PathVariable("id") UUID id) {
-        return payrollService.findById(id);
+    public PayrollDtos.Response findById(@PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal) {
+        return payrollService.findById(id, principal);
     }
 
     @DeleteMapping("/{id}")

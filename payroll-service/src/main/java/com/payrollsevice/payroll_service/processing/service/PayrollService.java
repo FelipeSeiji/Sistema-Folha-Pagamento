@@ -93,13 +93,17 @@ public class PayrollService {
     }
 
     @Transactional(readOnly = true)
-    public Page<PayrollDtos.Response> list(Pageable pageable) {
-        return repository.findAll(pageable).map(PayrollDtos.Response::from);
+    public Page<PayrollDtos.Response> list(Pageable pageable, Jwt principal) {
+        var companyIds = PayrollCompanyAccess.companyIds(principal);
+        if (companyIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return repository.findByCompanyIdIn(companyIds, pageable).map(PayrollDtos.Response::from);
     }
 
     @Transactional(readOnly = true)
-    public PayrollDtos.Response findById(UUID id) {
-        return PayrollDtos.Response.from(requirePayroll(id));
+    public PayrollDtos.Response findById(UUID id, Jwt principal) {
+        return PayrollDtos.Response.from(requireCompanyPayroll(id, principal));
     }
 
     @Transactional
@@ -118,8 +122,8 @@ public class PayrollService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<PayrollDtos.SummaryResponse> findSummary(UUID id) {
-        Payroll payroll = requirePayroll(id);
+    public Optional<PayrollDtos.SummaryResponse> findSummary(UUID id, Jwt principal) {
+        Payroll payroll = requireCompanyPayroll(id, principal);
         if (payroll.getStatus() != PayrollStatus.CLOSED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to have a summary.");
         }
@@ -129,8 +133,7 @@ public class PayrollService {
 
     @Transactional(readOnly = true)
     public PayrollDtos.FinanceReport findFinanceReport(UUID id, Jwt principal) {
-        Payroll payroll = requirePayroll(id);
-        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
+        Payroll payroll = requireCompanyPayroll(id, principal);
         if (payroll.getStatus() != PayrollStatus.CLOSED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to have a finance report.");
         }
@@ -150,6 +153,12 @@ public class PayrollService {
         BigDecimal total = entries.stream().map(PayrollDtos.FinanceReportEntry::netPay)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new PayrollDtos.FinanceReport(YearMonth.from(payroll.getPeriod()), entries, total);
+    }
+
+    private Payroll requireCompanyPayroll(UUID id, Jwt principal) {
+        Payroll payroll = requirePayroll(id);
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
+        return payroll;
     }
 
     private Payroll requirePayroll(UUID id) {
