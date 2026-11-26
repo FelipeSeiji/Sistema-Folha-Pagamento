@@ -377,6 +377,43 @@ class PayrollControllerTests {
         assertThat(documents.findById(payslipId).orElseThrow().getPdf()).isEqualTo(pdf);
     }
 
+    @Test
+    void returnsPersistedNetPayPerRegistrationForClosedPayrollOnly() {
+        var fixture = prepareCalculation();
+        UUID payrollId = fixture.payrollId();
+        RestClient http = client();
+        String route = "/payroll/{id}/finance-report";
+
+        assertThat(http.get().uri(route, UUID.randomUUID())
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
+        assertThat(http.get().uri(route, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+
+        jdbc.update("UPDATE tb_attendance_summary SET absence_minutes = 60 WHERE contract_id = ?",
+            fixture.firstContractId());
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        assertThat(http.get().uri(route, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+        http.post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+
+        var response = http.get().uri(route, payrollId).retrieve().toEntity(PayrollDtos.FinanceReport.class);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        var report = response.getBody();
+        assertThat(report.period()).isEqualTo(YearMonth.of(2026, 11));
+        assertThat(report.entries()).satisfiesExactly(
+            first -> {
+                assertThat(first.employeeName()).isEqualTo("Employee 001");
+                assertThat(first.registrationNumber()).isEqualTo("001");
+                assertThat(first.netPay()).isEqualByComparingTo("2985.00");
+            },
+            second -> {
+                assertThat(second.employeeName()).isEqualTo("Employee 002");
+                assertThat(second.registrationNumber()).isEqualTo("002");
+                assertThat(second.netPay()).isEqualByComparingTo("3000.00");
+            });
+        assertThat(report.totalNetPay()).isEqualByComparingTo("5985.00");
+    }
+
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
