@@ -13,6 +13,8 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -80,13 +82,17 @@ public class PayrollController {
     }
 
     @GetMapping("/{id}/finance-report")
-    public ResponseEntity<PayrollDtos.FinanceReport> findFinanceReport(@PathVariable("id") UUID id) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payrollService.findFinanceReport(id));
+    public ResponseEntity<PayrollDtos.FinanceReport> findFinanceReport(
+        @PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal
+    ) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payrollService.findFinanceReport(id, principal));
     }
 
     @GetMapping(value = "/{id}/finance-report.csv", produces = "text/csv")
-    public ResponseEntity<byte[]> downloadFinanceReport(@PathVariable("id") UUID id) {
-        byte[] csv = FinanceReportCsv.encode(payrollService.findFinanceReport(id));
+    public ResponseEntity<byte[]> downloadFinanceReport(
+        @PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal
+    ) {
+        byte[] csv = FinanceReportCsv.encode(payrollService.findFinanceReport(id, principal));
         var attachment = ContentDisposition.attachment().filename("finance-report-" + id + ".csv").build();
         return ResponseEntity.ok()
             .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
