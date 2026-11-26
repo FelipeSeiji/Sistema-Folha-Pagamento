@@ -2,6 +2,7 @@ package com.payrollsevice.payroll_service.processing.dto;
 
 import java.math.BigDecimal;
 import java.time.YearMonth;
+import java.util.List;
 import java.util.UUID;
 
 import com.payrollsevice.payroll_service.processing.model.ClosedPayrollSummary;
@@ -26,6 +27,12 @@ public final class PayrollDtos {
         @NotNull UUID absenceRubricId,
         @NotNull @DecimalMin("1") @Digits(integer = 3, fraction = 4) BigDecimal overtimeMultiplier
     ) {
+    }
+
+    public record FinanceReport(YearMonth period, List<FinanceReportEntry> entries, BigDecimal totalNetPay) {
+    }
+
+    public record FinanceReportEntry(String employeeName, String registrationNumber, BigDecimal netPay) {
     }
 
     public record SummaryResponse(

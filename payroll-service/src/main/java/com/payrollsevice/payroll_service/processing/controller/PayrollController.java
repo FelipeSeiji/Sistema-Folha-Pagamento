@@ -76,6 +76,11 @@ public class PayrollController {
         return ResponseEntity.accepted().build();
     }
 
+    @GetMapping("/{id}/finance-report")
+    public ResponseEntity<PayrollDtos.FinanceReport> findFinanceReport(@PathVariable("id") UUID id) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payrollService.findFinanceReport(id));
+    }
+
     @GetMapping("/{id}/summary")
     public ResponseEntity<PayrollDtos.SummaryResponse> findSummary(@PathVariable("id") UUID id) {
         return payrollService.findSummary(id)

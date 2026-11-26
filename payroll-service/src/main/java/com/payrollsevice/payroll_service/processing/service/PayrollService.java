@@ -1,10 +1,14 @@
 package com.payrollsevice.payroll_service.processing.service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Comparator;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -17,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.payrollsevice.payroll_service.outbox.model.PayrollOutboxEvent;
 import com.payrollsevice.payroll_service.outbox.repository.PayrollOutboxRepository;
+import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
 import com.payrollsevice.payroll_service.personnel.PersonnelClient;
 import com.payrollsevice.payroll_service.personnel.PersonnelInputConflictException;
 import com.payrollsevice.payroll_service.personnel.PersonnelUnavailableException;
@@ -37,6 +42,7 @@ public class PayrollService {
     private final PersonnelClient personnelClient;
     private final PayrollOutboxRepository outboxRepository;
     private final ClosedPayrollSummaryRepository summaryRepository;
+    private final PayslipRepository payslipRepository;
 
     public PayrollDtos.Response create(PayrollDtos.CreateRequest request) {
         LocalDate period = request.period().atDay(1);
@@ -115,6 +121,30 @@ public class PayrollService {
         }
 
         return summaryRepository.findById(id).map(PayrollDtos.SummaryResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public PayrollDtos.FinanceReport findFinanceReport(UUID id) {
+        Payroll payroll = requirePayroll(id);
+        if (payroll.getStatus() != PayrollStatus.CLOSED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to have a finance report.");
+        }
+
+        var contracts = payroll.getSnapshotPayload().contracts().stream()
+            .collect(Collectors.toMap(Snapshot.Contract::contractId, Function.identity()));
+        var entries = payslipRepository.findByPayrollId(id).stream().map(payslip -> {
+            var contract = contracts.get(payslip.getContractId());
+            if (contract == null) {
+                throw new IllegalStateException("Payslip contract is missing from the payroll snapshot.");
+            }
+            return new PayrollDtos.FinanceReportEntry(contract.employeeName(), contract.registrationNumber(),
+                payslip.getNetPay());
+        }).sorted(Comparator.comparing(PayrollDtos.FinanceReportEntry::employeeName)
+            .thenComparing(PayrollDtos.FinanceReportEntry::registrationNumber)).toList();
+
+        BigDecimal total = entries.stream().map(PayrollDtos.FinanceReportEntry::netPay)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new PayrollDtos.FinanceReport(YearMonth.from(payroll.getPeriod()), entries, total);
     }
 
     private Payroll requirePayroll(UUID id) {
