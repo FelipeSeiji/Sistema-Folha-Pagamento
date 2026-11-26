@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -67,8 +69,13 @@ public class PayrollController {
     }
 
     @GetMapping("/{id}/summary")
-    public PayrollDtos.SummaryResponse findSummary(@PathVariable("id") UUID id) {
-        return payrollService.findSummary(id);
+    public ResponseEntity<PayrollDtos.SummaryResponse> findSummary(@PathVariable("id") UUID id) {
+        return payrollService.findSummary(id)
+            .map(ResponseEntity::ok)
+            .orElseGet(() -> ResponseEntity.accepted()
+                .header(HttpHeaders.RETRY_AFTER, "5")
+                .cacheControl(CacheControl.noStore())
+                .build());
     }
 
     @GetMapping("/{id}")

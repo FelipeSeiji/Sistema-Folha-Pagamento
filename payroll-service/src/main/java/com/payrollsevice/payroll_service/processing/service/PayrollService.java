@@ -3,6 +3,7 @@ package com.payrollsevice.payroll_service.processing.service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -107,10 +108,13 @@ public class PayrollService {
     }
 
     @Transactional(readOnly = true)
-    public PayrollDtos.SummaryResponse findSummary(UUID id) {
-        return summaryRepository.findById(id)
-            .map(PayrollDtos.SummaryResponse::from)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll summary not found."));
+    public Optional<PayrollDtos.SummaryResponse> findSummary(UUID id) {
+        Payroll payroll = requirePayroll(id);
+        if (payroll.getStatus() != PayrollStatus.CLOSED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to have a summary.");
+        }
+
+        return summaryRepository.findById(id).map(PayrollDtos.SummaryResponse::from);
     }
 
     private Payroll requirePayroll(UUID id) {
