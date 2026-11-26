@@ -2,6 +2,12 @@ package com.payrollsevice.payroll_service.processing.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +27,9 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -68,6 +77,9 @@ class PayrollControllerTests {
 
     @MockitoBean
     private JwtDecoder jwtDecoder;
+
+    @MockitoBean
+    private RabbitTemplate rabbit;
 
     @Autowired
     private PayrollRepository repository;
@@ -540,6 +552,47 @@ class PayrollControllerTests {
         assertThat(outboxRepository.findByPayrollId(payrollId)).isEmpty();
         assertThat(financeClient(payrollId).post().uri(close, payrollId)
             .retrieve().toBodilessEntity().getStatusCode().value()).isEqualTo(200);
+    }
+
+    @Test
+    void onlyAuthorizedFinanceCanEnqueueDocumentsForClosedPayroll() {
+        var fixture = prepareCalculation();
+        UUID id = fixture.payrollId();
+        String route = "/payroll/{id}/payslip-documents";
+        RestClient finance = financeClient(id);
+        assertThat(postStatus(finance, route, id)).isEqualTo(409);
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        finance.post().uri("/payroll/{id}/close", id).retrieve().toBodilessEntity();
+
+        when(jwtDecoder.decode("invalid-queue-token")).thenThrow(new BadJwtException("Invalid test token."));
+        RestClient invalid = client().mutate().defaultHeaders(headers ->
+            headers.setBearerAuth("invalid-queue-token")).build();
+        String company = repository.findById(id).orElseThrow().getCompanyId().toString();
+        RestClient hr = authenticatedClient("HR", List.of(company));
+        RestClient outside = authenticatedClient("FINANCE", List.of(UUID.randomUUID().toString()));
+
+        assertThat(postStatus(client(), route, id)).isEqualTo(401);
+        assertThat(postStatus(invalid, route, id)).isEqualTo(401);
+        assertThat(postStatus(hr, route, id)).isEqualTo(403);
+        assertThat(postStatus(outside, route, id)).isEqualTo(403);
+        verifyNoInteractions(rabbit);
+
+        String queue = "payroll.payslip.pdf.generate";
+        doAnswer(invocation -> {
+            CorrelationData correlation = invocation.getArgument(3);
+            correlation.getFuture().complete(new CorrelationData.Confirm(true, null));
+            return null;
+        }).when(rabbit).convertAndSend(eq(""), eq(queue), anyString(), any(CorrelationData.class));
+
+        assertThat(postStatus(finance, route, id)).isEqualTo(202);
+        var jobs = ArgumentCaptor.forClass(String.class);
+        verify(rabbit, times(2)).convertAndSend(eq(""), eq(queue), jobs.capture(), any(CorrelationData.class));
+        assertThat(jobs.getAllValues()).containsExactlyInAnyOrderElementsOf(
+            payslipRepository.findIdsByPayrollId(id).stream().map(UUID::toString).toList());
+    }
+
+    private static int postStatus(RestClient client, String route, UUID id) {
+        return client.post().uri(route, id).exchange((sent, response) -> response.getStatusCode().value());
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
