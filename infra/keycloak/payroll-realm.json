@@ -1,0 +1,103 @@
+{
+  "realm": "payroll",
+  "displayName": "Sistema de Folha de Pagamento",
+  "enabled": true,
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "FINANCE"
+      },
+      {
+        "name": "HR"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "redirectUris": [
+        "http://localhost:3000/auth/callback"
+      ],
+      "protocolMappers": [
+        {
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "name": "Authorized companies",
+          "config": {
+            "claim.name": "company_ids",
+            "user.attribute": "company_ids",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "false",
+            "access.token.claim": "true",
+            "multivalued": "true",
+            "id.token.claim": "false"
+          },
+          "protocol": "openid-connect"
+        }
+      ],
+      "standardFlowEnabled": true,
+      "enabled": true,
+      "directAccessGrantsEnabled": false,
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "clientId": "payroll-test",
+      "protocol": "openid-connect",
+      "name": "Payroll local test client",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "publicClient": true
+    }
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"company_ids\",\"displayName\":\"Empresas autorizadas\",\"validations\":{\"pattern\":{\"pattern\":\"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$\"}},\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":true}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"}]}"
+          ]
+        }
+      }
+    ]
+  },
+  "browserFlow": "payroll-magic-link",
+  "smtpServer": {
+    "host": "payroll-mailpit",
+    "ssl": "false",
+    "auth": "false",
+    "fromDisplayName": "Sistema de Folha de Pagamento",
+    "from": "login@example.test",
+    "starttls": "false",
+    "port": "1025"
+  },
+  "authenticationFlows": [
+    {
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "priority": 10,
+          "authenticatorConfig": "payroll-single-use-link",
+          "requirement": "REQUIRED",
+          "userSetupAllowed": false,
+          "authenticatorFlow": false,
+          "authenticator": "ext-magic-form"
+        }
+      ],
+      "alias": "payroll-magic-link",
+      "description": "Passwordless login for existing payroll users",
+      "providerId": "basic-flow"
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "payroll-single-use-link",
+      "config": {
+        "ext-magic-create-nonexistent-user": "false",
+        "ext-magic-token-life-span": "300",
+        "ext-magic-allow-token-reuse": "false"
+      }
+    }
+  ]
+}
