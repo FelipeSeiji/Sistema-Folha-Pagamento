@@ -1,6 +1,7 @@
 package com.payrollsevice.payroll_service.processing.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -18,12 +19,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.client.RestClient;
 
 import com.payrollsevice.payroll_service.attendanceSummary.dto.AttendanceSummaryDtos;
+import com.payrollsevice.payroll_service.outbox.model.PayrollClosedMessage;
 import com.payrollsevice.payroll_service.outbox.model.PayrollOutboxEvent;
 import com.payrollsevice.payroll_service.outbox.repository.PayrollOutboxRepository;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
@@ -35,7 +39,10 @@ import com.payrollsevice.payroll_service.personnel.dto.PersonnelPayrollInput;
 import com.payrollsevice.payroll_service.processing.dto.PayrollDtos;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.model.PayrollType;
+import com.payrollsevice.payroll_service.processing.repository.ClosedPayrollSummaryRepository;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
+import com.payrollsevice.payroll_service.processing.service.PayrollClosedConsumer;
+import tools.jackson.databind.json.JsonMapper;
 import com.payrollsevice.payroll_service.rubric.dto.RubricDtos;
 import com.payrollsevice.payroll_service.rubric.model.RubricType;
 
@@ -56,6 +63,18 @@ class PayrollControllerTests {
 
     @Autowired
     private PayrollOutboxRepository outboxRepository;
+
+    @Autowired
+    private PayrollClosedConsumer closedConsumer;
+
+    @Autowired
+    private ClosedPayrollSummaryRepository summaryRepository;
+
+    @Autowired
+    private JsonMapper jsonMapper;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void createsAndReadsDraftWithPersistedSnapshot() {
@@ -266,6 +285,41 @@ class PayrollControllerTests {
         assertThat(reloaded.getVersion()).isEqualTo(calculated.getVersion());
         assertThat(outboxRepository.findByPayrollId(calculated.getId()))
             .extracting(PayrollOutboxEvent::getId).containsExactly(existing.getId());
+    }
+
+    @Test
+    void retriesFailedSummaryInsertAndIgnoresRedelivery() {
+        var fixture = prepareCalculation();
+        UUID payrollId = fixture.payrollId();
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        client().post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+        var event = outboxRepository.findByPayrollId(payrollId).getFirst();
+        var message = new PayrollClosedMessage(event.getId(), event.getEventType(), event.getOccurredAt(),
+            event.getPayload());
+
+        String json = jsonMapper.writeValueAsString(message);
+        jdbc.execute("ALTER TABLE tb_closed_payroll_summary ADD CONSTRAINT ck_test_reject_payroll "
+            + "CHECK (payroll_id <> CAST('" + payrollId + "' AS UUID))");
+        try {
+            assertThatThrownBy(() -> closedConsumer.consume(json)).isInstanceOf(DataIntegrityViolationException.class);
+            assertThat(summaryRepository.findById(payrollId)).isEmpty();
+            assertThat(summaryRepository.existsByEventId(event.getId())).isFalse();
+        } finally {
+            jdbc.execute("ALTER TABLE tb_closed_payroll_summary DROP CONSTRAINT ck_test_reject_payroll");
+        }
+
+        closedConsumer.consume(json);
+        closedConsumer.consume(json);
+
+        var summary = summaryRepository.findById(payrollId).orElseThrow();
+        assertThat(summary.getEventId()).isEqualTo(event.getId());
+        assertThat(summary.getCompanyId()).isEqualTo(event.getPayload().companyId());
+        assertThat(YearMonth.from(summary.getPeriod())).isEqualTo(event.getPayload().period());
+        assertThat(summary.getClosedAt()).isEqualTo(event.getOccurredAt());
+        assertThat(summary.getPayslipCount()).isEqualTo(2);
+        assertThat(summary.getTotalEarnings()).isEqualByComparingTo("6000.00");
+        assertThat(summary.getTotalDeductions()).isEqualByComparingTo("0.00");
+        assertThat(summary.getNetPay()).isEqualByComparingTo("6000.00");
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
