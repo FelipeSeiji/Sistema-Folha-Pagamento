@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -27,6 +28,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.client.RestClient;
@@ -61,6 +64,9 @@ class PayrollControllerTests {
 
     @MockitoBean
     private PersonnelClient personnelClient;
+
+    @MockitoBean
+    private JwtDecoder jwtDecoder;
 
     @Autowired
     private PayrollRepository repository;
@@ -385,7 +391,7 @@ class PayrollControllerTests {
     void returnsPersistedNetPayPerRegistrationForClosedPayrollOnly() {
         var fixture = prepareCalculation();
         UUID payrollId = fixture.payrollId();
-        RestClient http = client();
+        RestClient http = financeClient(payrollId);
         String route = "/payroll/{id}/finance-report";
 
         assertThat(http.get().uri(route, UUID.randomUUID())
@@ -422,7 +428,7 @@ class PayrollControllerTests {
     void exportsCsvWithAccentedNamesAndLeadingZerosOnlyAfterClosing(@TempDir Path output) throws Exception {
         var fixture = prepareCalculation("João da Conceição");
         UUID payrollId = fixture.payrollId();
-        RestClient http = client();
+        RestClient http = financeClient(payrollId);
         String route = "/payroll/{id}/finance-report.csv";
 
         assertThat(http.get().uri(route, UUID.randomUUID())
@@ -449,6 +455,28 @@ class PayrollControllerTests {
                 + "11/2026;\"João da Conceição 002\";\"002\";3000,00\r\n"
                 + "11/2026;TOTAL;;5985,00\r\n");
         Files.write(output.resolve("finance-report-verification.csv"), csv.getBody());
+    }
+
+    @Test
+    void restrictsFinanceReportsToFinanceUsersWithCompanyAccess() {
+        var fixture = prepareCalculation();
+        UUID payrollId = fixture.payrollId();
+        String company = repository.findById(payrollId).orElseThrow().getCompanyId().toString();
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        client().post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+
+        RestClient hr = authenticatedClient("HR", List.of(company));
+        RestClient wrongCompany = authenticatedClient("FINANCE", List.of(UUID.randomUUID().toString()));
+        RestClient malformedCompanies = authenticatedClient("FINANCE", company);
+        RestClient authorized = financeClient(payrollId);
+        for (String path : List.of("/payroll/{id}/finance-report", "/payroll/{id}/finance-report.csv")) {
+            for (RestClient denied : List.of(hr, wrongCompany, malformedCompanies)) {
+                assertThat(denied.get().uri(path, payrollId)
+                    .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(403);
+            }
+            assertThat(authorized.get().uri(path, payrollId)
+                .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(200);
+        }
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
@@ -520,6 +548,22 @@ class PayrollControllerTests {
         return http.post().uri("/rubric")
             .body(new RubricDtos.Request(companyId, code, code, type, false, false, false))
             .retrieve().body(RubricDtos.Response.class).id();
+    }
+
+    private RestClient financeClient(UUID payrollId) {
+        UUID companyId = repository.findById(payrollId).orElseThrow().getCompanyId();
+        return authenticatedClient("FINANCE", List.of(companyId.toString()));
+    }
+
+    private RestClient authenticatedClient(String role, Object companyIds) {
+        String token = UUID.randomUUID().toString();
+        when(jwtDecoder.decode(token)).thenReturn(Jwt.withTokenValue(token)
+            .header("alg", "RS256")
+            .subject("finance-test")
+            .claim("realm_access", Map.of("roles", List.of(role)))
+            .claim("company_ids", companyIds)
+            .build());
+        return client().mutate().defaultHeaders(headers -> headers.setBearerAuth(token)).build();
     }
 
     private RestClient client() {

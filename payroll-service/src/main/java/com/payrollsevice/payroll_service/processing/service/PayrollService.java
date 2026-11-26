@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -124,8 +126,12 @@ public class PayrollService {
     }
 
     @Transactional(readOnly = true)
-    public PayrollDtos.FinanceReport findFinanceReport(UUID id) {
+    public PayrollDtos.FinanceReport findFinanceReport(UUID id, Jwt principal) {
         Payroll payroll = requirePayroll(id);
+        if (!(principal.getClaims().get("company_ids") instanceof Collection<?> companyIds)
+                || !companyIds.contains(payroll.getCompanyId().toString())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access to this payroll company is required.");
+        }
         if (payroll.getStatus() != PayrollStatus.CLOSED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to have a finance report.");
         }
