@@ -9,12 +9,14 @@ import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
+import com.payrollsevice.payroll_service.security.PayrollCompanyAccess;
 
 import lombok.RequiredArgsConstructor;
 
@@ -25,9 +27,10 @@ public class PayslipDocumentDispatcher {
     private final PayslipRepository payslips;
     private final RabbitTemplate rabbit;
 
-    public void enqueue(UUID payrollId) {
+    public void enqueue(UUID payrollId, Jwt principal) {
         var payroll = payrolls.findById(payrollId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         if (payroll.getStatus() != PayrollStatus.CLOSED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to request payslip PDFs.");
         }
