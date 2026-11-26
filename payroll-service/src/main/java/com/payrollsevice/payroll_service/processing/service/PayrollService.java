@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,6 +33,8 @@ import com.payrollsevice.payroll_service.processing.model.Payroll.Snapshot;
 import com.payrollsevice.payroll_service.processing.model.PayrollStatus;
 import com.payrollsevice.payroll_service.processing.repository.ClosedPayrollSummaryRepository;
 import com.payrollsevice.payroll_service.processing.repository.PayrollRepository;
+
+import com.payrollsevice.payroll_service.security.PayrollCompanyAccess;
 
 import lombok.RequiredArgsConstructor;
 
@@ -102,9 +103,10 @@ public class PayrollService {
     }
 
     @Transactional
-    public PayrollDtos.Response close(UUID id) {
+    public PayrollDtos.Response close(UUID id, Jwt principal) {
         Payroll payroll = repository.findForUpdateById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         if (payroll.getStatus() != PayrollStatus.CALCULATED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only calculated payrolls can be closed.");
         }
@@ -128,10 +130,7 @@ public class PayrollService {
     @Transactional(readOnly = true)
     public PayrollDtos.FinanceReport findFinanceReport(UUID id, Jwt principal) {
         Payroll payroll = requirePayroll(id);
-        if (!(principal.getClaims().get("company_ids") instanceof Collection<?> companyIds)
-                || !companyIds.contains(payroll.getCompanyId().toString())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access to this payroll company is required.");
-        }
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         if (payroll.getStatus() != PayrollStatus.CLOSED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll must be closed to have a finance report.");
         }

@@ -65,14 +65,15 @@ public class PayrollController {
 
     @PostMapping("/{id}/calculate")
     public List<PayslipDtos.Response> calculate(
-        @PathVariable("id") UUID id, @Valid @RequestBody PayrollDtos.CalculationRequest request
+        @PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal,
+        @Valid @RequestBody PayrollDtos.CalculationRequest request
     ) {
-        return calculator.calculate(id, request);
+        return calculator.calculate(id, request, principal);
     }
 
     @PostMapping("/{id}/close")
-    public PayrollDtos.Response close(@PathVariable("id") UUID id) {
-        return payrollService.close(id);
+    public PayrollDtos.Response close(@PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal) {
+        return payrollService.close(id, principal);
     }
 
     @PostMapping("/{id}/payslip-documents")

@@ -27,9 +27,10 @@ public class PayrollSecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain financeReportSecurity(HttpSecurity http) {
+    SecurityFilterChain financeSecurity(HttpSecurity http) {
         return http
-            .securityMatcher("/payroll/*/finance-report", "/payroll/*/finance-report.csv")
+            .securityMatcher("/payroll/*/finance-report", "/payroll/*/finance-report.csv",
+                "/payroll/*/calculate", "/payroll/*/close")
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(requests -> requests.anyRequest().hasRole("FINANCE"))

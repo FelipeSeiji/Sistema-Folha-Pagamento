@@ -11,6 +11,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,6 +29,8 @@ import com.payrollsevice.payroll_service.processing.repository.PayrollRepository
 import com.payrollsevice.payroll_service.rubric.model.Rubric;
 import com.payrollsevice.payroll_service.rubric.model.RubricType;
 import com.payrollsevice.payroll_service.rubric.repository.RubricRepository;
+
+import com.payrollsevice.payroll_service.security.PayrollCompanyAccess;
 
 import lombok.RequiredArgsConstructor;
 
@@ -47,9 +50,10 @@ public class RegularPayrollCalculator {
     }
 
     @Transactional
-    public List<PayslipDtos.Response> calculate(UUID payrollId, CalculationRequest request) {
+    public List<PayslipDtos.Response> calculate(UUID payrollId, CalculationRequest request, Jwt principal) {
         Payroll payroll = payrollRepository.findForUpdateById(payrollId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         if (payroll.getStatus() != PayrollStatus.DRAFT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only draft payrolls can be calculated.");
         }
