@@ -66,6 +66,11 @@ public class PayrollController {
         return payrollService.close(id);
     }
 
+    @GetMapping("/{id}/summary")
+    public PayrollDtos.SummaryResponse findSummary(@PathVariable("id") UUID id) {
+        return payrollService.findSummary(id);
+    }
+
     @GetMapping("/{id}")
     public PayrollDtos.Response findById(@PathVariable("id") UUID id) {
         return payrollService.findById(id);
