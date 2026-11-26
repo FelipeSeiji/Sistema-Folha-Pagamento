@@ -32,6 +32,16 @@
             "id.token.claim": "false"
           },
           "protocol": "openid-connect"
+        },
+        {
+          "name": "Payroll service audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "payroll-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
         }
       ],
       "standardFlowEnabled": true,
