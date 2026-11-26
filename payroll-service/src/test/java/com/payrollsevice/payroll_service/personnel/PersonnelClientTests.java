@@ -89,4 +89,16 @@ class PersonnelClientTests {
             .hasRootCauseInstanceOf(ConnectException.class);
         server.verify();
     }
+
+    @Test
+    void resolvesCompanyFromThePersonnelContractResponse() {
+        UUID contract = UUID.randomUUID();
+        server.expect(requestTo(BASE_URL + "/employment-contract/" + contract)).andExpect(method(HttpMethod.GET))
+            .andRespond(withSuccess("""
+                {"id":"%s","companyId":"%s","registrationNumber":"001"}
+                """.formatted(contract, COMPANY), MediaType.APPLICATION_JSON));
+
+        assertThat(client.findContractCompanyId(contract)).contains(COMPANY);
+        server.verify();
+    }
 }
