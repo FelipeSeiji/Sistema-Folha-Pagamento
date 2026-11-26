@@ -136,9 +136,9 @@ class PayrollControllerTests {
         assertThat(client.post().uri("/payroll").body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
 
-        assertThat(client.get().uri("/payroll/{id}", body.id()).retrieve().body(PayrollDtos.Response.class))
+        assertThat(financeClient(body.id()).get().uri("/payroll/{id}", body.id()).retrieve().body(PayrollDtos.Response.class))
             .isEqualTo(body);
-        assertThat(client.get().uri("/payroll").retrieve().body(String.class)).contains(body.id().toString());
+        assertThat(financeClient(body.id()).get().uri("/payroll").retrieve().body(String.class)).contains(body.id().toString());
     }
 
     @Test
@@ -164,7 +164,7 @@ class PayrollControllerTests {
 
     @Test
     void returnsNotFoundForUnknownPayroll() {
-        assertThat(client().get().uri("/payroll/{id}", UUID.randomUUID())
+        assertThat(authenticatedClient("FINANCE", List.of()).get().uri("/payroll/{id}", UUID.randomUUID())
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
     }
 
@@ -325,7 +325,7 @@ class PayrollControllerTests {
     void retriesFailedSummaryInsertAndIgnoresRedelivery() {
         var fixture = prepareCalculation();
         UUID payrollId = fixture.payrollId();
-        RestClient http = client();
+        RestClient http = financeClient(payrollId);
         String route = "/payroll/{id}/summary";
         assertThat(http.get().uri(route, UUID.randomUUID())
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
@@ -593,6 +593,44 @@ class PayrollControllerTests {
 
     private static int postStatus(RestClient client, String route, UUID id) {
         return client.post().uri(route, id).exchange((sent, response) -> response.getStatusCode().value());
+    }
+
+    @Test
+    void restrictsPayrollReadsAndCountsOnlyAuthorizedCompanies() {
+        var first = prepareCalculation();
+        var second = prepareCalculation();
+        var outside = prepareCalculation();
+        var companies = List.of(first, second).stream()
+            .map(fixture -> repository.findById(fixture.payrollId()).orElseThrow().getCompanyId().toString()).toList();
+        RestClient finance = authenticatedClient("FINANCE", companies);
+        RestClient hr = authenticatedClient("HR", companies);
+        when(jwtDecoder.decode("invalid-payroll-read-token")).thenThrow(new BadJwtException("Invalid test token."));
+        RestClient invalid = client().mutate().defaultHeaders(headers ->
+            headers.setBearerAuth("invalid-payroll-read-token")).build();
+
+        for (String route : List.of("/payroll", "/payroll/" + first.payrollId(),
+                "/payroll/" + first.payrollId() + "/summary")) {
+            assertThat(payrollReadStatus(client(), route)).isEqualTo(401);
+            assertThat(payrollReadStatus(invalid, route)).isEqualTo(401);
+            assertThat(payrollReadStatus(hr, route)).isEqualTo(403);
+        }
+        assertThat(payrollReadStatus(finance, "/payroll/" + outside.payrollId())).isEqualTo(403);
+        assertThat(payrollReadStatus(finance, "/payroll/" + outside.payrollId() + "/summary")).isEqualTo(403);
+        assertThat(payrollReadStatus(finance, "/payroll/" + first.payrollId())).isEqualTo(200);
+
+        var displayed = new java.util.ArrayList<String>();
+        for (int page = 0; page < 2; page++) {
+            String body = finance.get().uri("/payroll?size=1&page={page}", page).retrieve().body(String.class);
+            var result = jsonMapper.readTree(body);
+            assertThat(result.path("page").path("totalElements").asInt()).isEqualTo(2);
+            assertThat(result.path("content").size()).isEqualTo(1);
+            displayed.add(result.path("content").get(0).path("id").asString());
+        }
+        assertThat(displayed).containsExactlyInAnyOrder(first.payrollId().toString(), second.payrollId().toString());
+    }
+
+    private static int payrollReadStatus(RestClient client, String route) {
+        return client.get().uri(route).exchange((sent, response) -> response.getStatusCode().value());
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
