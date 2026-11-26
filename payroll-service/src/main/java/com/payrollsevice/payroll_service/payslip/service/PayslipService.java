@@ -39,9 +39,10 @@ public class PayslipService {
     private final RubricRepository rubricRepository;
 
     @Transactional
-    public PayslipDtos.Response create(PayslipDtos.Request request) {
-        var payroll = payrollRepository.findById(request.payrollId())
+    public PayslipDtos.Response create(PayslipDtos.Request request, Jwt principal) {
+        var payroll = payrollRepository.findForUpdateById(request.payrollId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         requireDraft(payroll);
         if (payroll.getSnapshotPayload().contracts().stream()
                 .noneMatch(contract -> contract.contractId().equals(request.contractId()))) {
@@ -57,8 +58,9 @@ public class PayslipService {
     }
 
     @Transactional
-    public PayslipDtos.Response update(UUID id, PayslipDtos.Request request) {
+    public PayslipDtos.Response update(UUID id, PayslipDtos.Request request, Jwt principal) {
         Payslip entity = requirePayslipForUpdate(id);
+        PayrollCompanyAccess.require(principal, entity.getPayroll().getCompanyId());
         if (!entity.getPayroll().getId().equals(request.payrollId())
                 || !entity.getContractId().equals(request.contractId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payslip payroll and contract cannot be changed.");
@@ -108,8 +110,9 @@ public class PayslipService {
     }
 
     @Transactional
-    public void delete(UUID id) {
+    public void delete(UUID id, Jwt principal) {
         Payslip payslip = requirePayslipForUpdate(id);
+        PayrollCompanyAccess.require(principal, payslip.getPayroll().getCompanyId());
         requireDraft(payslip.getPayroll());
         repository.delete(payslip);
     }

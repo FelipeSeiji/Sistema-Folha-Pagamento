@@ -36,6 +36,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jwt.BadJwtException;
@@ -188,9 +189,9 @@ class PayrollControllerTests {
         var payroll = authenticatedClient("FINANCE", List.of(companyId.toString())).post().uri("/payroll")
             .body(new PayrollDtos.CreateRequest(companyId, month, PayrollType.REGULAR))
             .retrieve().body(PayrollDtos.Response.class);
-        UUID salary = createRubric(http, companyId, "SALARY", RubricType.EARNING);
-        UUID overtime = createRubric(http, companyId, "OVERTIME", RubricType.EARNING);
-        UUID absence = createRubric(http, companyId, "ABSENCE", RubricType.DEDUCTION);
+        UUID salary = createRubric(companyId, "SALARY", RubricType.EARNING);
+        UUID overtime = createRubric(companyId, "OVERTIME", RubricType.EARNING);
+        UUID absence = createRubric(companyId, "ABSENCE", RubricType.DEDUCTION);
         var request = new PayrollDtos.CalculationRequest(salary, overtime, absence, new BigDecimal("1.50"));
         String route = "/payroll/{id}/calculation-preview";
         RestClient finance = financeClient(payroll.id());
@@ -255,7 +256,7 @@ class PayrollControllerTests {
         var request = new PayslipDtos.Request(fixture.payrollId(), fixture.secondContractId(),
             new BigDecimal("2500.00"), List.of(new PayslipDtos.ItemRequest(
                 fixture.request().salaryRubricId(), null, new BigDecimal("2500.00"))));
-        var manual = client().post().uri("/payslip").body(request)
+        var manual = financeClient(fixture.payrollId()).post().uri("/payslip").body(request)
             .retrieve().body(PayslipDtos.Response.class);
 
         assertThat(calculateStatus(fixture)).isEqualTo(409);
@@ -703,6 +704,66 @@ class PayrollControllerTests {
         return client.delete().uri("/payroll/{id}", id).exchange((sent, response) -> response.getStatusCode().value());
     }
 
+    @Test
+    void restrictsRubricCrudAndCountsOnlyAuthorizedCompanies() {
+        UUID company = UUID.randomUUID();
+        UUID otherCompany = UUID.randomUUID();
+        RestClient finance = authenticatedClient("FINANCE", List.of(company.toString()));
+        RestClient hr = authenticatedClient("HR", List.of(company.toString()));
+        RestClient outside = authenticatedClient("FINANCE", List.of(otherCompany.toString()));
+        when(jwtDecoder.decode("invalid-rubric-token")).thenThrow(new BadJwtException("Invalid test token."));
+        RestClient invalid = client().mutate().defaultHeaders(headers ->
+            headers.setBearerAuth("invalid-rubric-token")).build();
+        var original = new RubricDtos.Request(company, "B", "Original", RubricType.EARNING, false, false, false);
+        var changed = new RubricDtos.Request(company, "B", "Changed", RubricType.EARNING, false, false, false);
+
+        assertThat(rubricStatus(client(), HttpMethod.POST, "/rubric", original)).isEqualTo(401);
+        assertThat(rubricStatus(invalid, HttpMethod.POST, "/rubric", original)).isEqualTo(401);
+        assertThat(rubricStatus(hr, HttpMethod.POST, "/rubric", original)).isEqualTo(403);
+        assertThat(rubricStatus(outside, HttpMethod.POST, "/rubric", original)).isEqualTo(403);
+        assertThat(jsonMapper.readTree(finance.get().uri("/rubric").retrieve().body(String.class))
+            .path("page").path("totalElements").asInt()).isZero();
+
+        var created = finance.post().uri("/rubric").body(original).retrieve().toEntity(RubricDtos.Response.class);
+        assertThat(created.getStatusCode().value()).isEqualTo(201);
+        String route = "/rubric/" + created.getBody().id();
+
+        for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE)) {
+            var body = method == HttpMethod.PUT ? changed : null;
+            assertThat(rubricStatus(client(), method, route, body)).isEqualTo(401);
+            assertThat(rubricStatus(invalid, method, route, body)).isEqualTo(401);
+            assertThat(rubricStatus(hr, method, route, body)).isEqualTo(403);
+            assertThat(rubricStatus(outside, method, route, body)).isEqualTo(403);
+        }
+        assertThat(rubricStatus(client(), HttpMethod.GET, "/rubric", null)).isEqualTo(401);
+        assertThat(rubricStatus(invalid, HttpMethod.GET, "/rubric", null)).isEqualTo(401);
+        assertThat(rubricStatus(hr, HttpMethod.GET, "/rubric", null)).isEqualTo(403);
+        assertThat(finance.get().uri(route).retrieve().body(RubricDtos.Response.class)).isEqualTo(created.getBody());
+
+        createRubric(otherCompany, "A", RubricType.EARNING);
+        UUID second = createRubric(company, "C", RubricType.EARNING);
+        var page = jsonMapper.readTree(finance.get().uri("/rubric?sort=code,asc&size=1").retrieve().body(String.class));
+        assertThat(page.path("page").path("totalElements").asInt()).isEqualTo(2);
+        assertThat(page.path("content").size()).isEqualTo(1);
+        assertThat(page.path("content").get(0).path("id").asString()).isEqualTo(created.getBody().id().toString());
+        var next = jsonMapper.readTree(finance.get().uri("/rubric?sort=code,asc&size=1&page=1")
+            .retrieve().body(String.class));
+        assertThat(next.path("content").get(0).path("id").asString()).isEqualTo(second.toString());
+
+        assertThat(finance.put().uri(route).body(changed).retrieve().body(RubricDtos.Response.class).description())
+            .isEqualTo("Changed");
+        assertThat(rubricStatus(finance, HttpMethod.DELETE, route, null)).isEqualTo(204);
+        assertThat(rubricStatus(finance, HttpMethod.GET, route, null)).isEqualTo(404);
+    }
+
+    private static int rubricStatus(RestClient client, HttpMethod method, String route, RubricDtos.Request body) {
+        var request = client.method(method).uri(route);
+        if (body != null) {
+            request.body(body);
+        }
+        return request.exchange((sent, response) -> response.getStatusCode().value());
+    }
+
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -761,9 +822,9 @@ class PayrollControllerTests {
         }
 
         var request = new PayrollDtos.CalculationRequest(
-            createRubric(http, companyId, "SALARY", RubricType.EARNING),
-            createRubric(http, companyId, "OVERTIME", RubricType.EARNING),
-            createRubric(http, companyId, "ABSENCE", RubricType.DEDUCTION), new BigDecimal("1.50"));
+            createRubric(companyId, "SALARY", RubricType.EARNING),
+            createRubric(companyId, "OVERTIME", RubricType.EARNING),
+            createRubric(companyId, "ABSENCE", RubricType.DEDUCTION), new BigDecimal("1.50"));
         return new CalculationFixture(payroll.id(), contracts.getFirst().contractId(), contracts.getLast().contractId(),
             request);
     }
@@ -773,8 +834,8 @@ class PayrollControllerTests {
     ) {
     }
 
-    private static UUID createRubric(RestClient http, UUID companyId, String code, RubricType type) {
-        return http.post().uri("/rubric")
+    private UUID createRubric(UUID companyId, String code, RubricType type) {
+        return authenticatedClient("FINANCE", List.of(companyId.toString())).post().uri("/rubric")
             .body(new RubricDtos.Request(companyId, code, code, type, false, false, false))
             .retrieve().body(RubricDtos.Response.class).id();
     }

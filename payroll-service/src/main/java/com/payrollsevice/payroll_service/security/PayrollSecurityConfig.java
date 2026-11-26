@@ -35,6 +35,7 @@ public class PayrollSecurityConfig {
         return http
             .securityMatcher(new OrRequestMatcher(
                 paths.matcher("/attendance-summary"), paths.matcher("/attendance-summary/{id}"),
+                paths.matcher("/rubric"), paths.matcher("/rubric/{id}"),
                 paths.matcher("/payroll/*/finance-report"), paths.matcher("/payroll/*/finance-report.csv"),
                 paths.matcher("/payroll/*/calculate"), paths.matcher("/payroll/*/close"),
                 paths.matcher(HttpMethod.POST, "/payroll/{id}/calculation-preview"),
@@ -44,6 +45,8 @@ public class PayrollSecurityConfig {
                 paths.matcher(HttpMethod.HEAD, "/payroll/{id}/summary"),
                 paths.matcher(HttpMethod.POST, "/payroll"), paths.matcher(HttpMethod.DELETE, "/payroll/{id}"),
                 paths.matcher(HttpMethod.POST, "/payroll/{id}/payslip-documents"),
+                paths.matcher(HttpMethod.POST, "/payslip"), paths.matcher(HttpMethod.PUT, "/payslip/{id}"),
+                paths.matcher(HttpMethod.DELETE, "/payslip/{id}"),
                 paths.matcher(HttpMethod.GET, "/payslip"), paths.matcher(HttpMethod.GET, "/payslip/{id}"),
                 paths.matcher(HttpMethod.HEAD, "/payslip"), paths.matcher(HttpMethod.HEAD, "/payslip/{id}"),
                 paths.matcher(HttpMethod.GET, "/payslip/{id}/document"),
