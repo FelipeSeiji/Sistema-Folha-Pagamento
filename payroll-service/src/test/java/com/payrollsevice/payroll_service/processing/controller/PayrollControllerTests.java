@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -211,7 +212,8 @@ class PayrollControllerTests {
 
         assertThat(finance.post().uri(route, payroll.id()).body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(422);
-        http.post().uri("/attendance-summary")
+        when(personnelClient.findContractCompanyId(contractId)).thenReturn(Optional.of(companyId));
+        authenticatedClient("FINANCE", List.of(companyId.toString())).post().uri("/attendance-summary")
             .body(new AttendanceSummaryDtos.Request(contractId, month, 6000L, 120L, 60L))
             .retrieve().toBodilessEntity();
 
@@ -813,7 +815,8 @@ class PayrollControllerTests {
             .body(new PayrollDtos.CreateRequest(companyId, month, PayrollType.REGULAR))
             .retrieve().body(PayrollDtos.Response.class);
         for (var contract : contracts) {
-            http.post().uri("/attendance-summary")
+            when(personnelClient.findContractCompanyId(contract.contractId())).thenReturn(Optional.of(companyId));
+            authenticatedClient("FINANCE", List.of(companyId.toString())).post().uri("/attendance-summary")
                 .body(new AttendanceSummaryDtos.Request(contract.contractId(), month, 12000L, 0L, 0L))
                 .retrieve().toBodilessEntity();
         }

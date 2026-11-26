@@ -14,7 +14,7 @@ public final class PayrollCompanyAccess {
     }
 
     public static void require(Jwt principal, UUID companyId) {
-        if (!companyIds(principal).contains(companyId)) {
+        if (companyId == null || !companyIds(principal).contains(companyId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access to this payroll company is required.");
         }
     }
