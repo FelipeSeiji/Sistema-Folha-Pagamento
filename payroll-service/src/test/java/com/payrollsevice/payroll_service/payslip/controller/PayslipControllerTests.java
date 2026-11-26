@@ -76,6 +76,18 @@ class PayslipControllerTests {
         var request = new PayslipDtos.Request(payroll.getId(), contractId, new BigDecimal("3000.00"), List.of(
             new PayslipDtos.ItemRequest(salary.id(), null, new BigDecimal("3000.00")),
             new PayslipDtos.ItemRequest(discount.id(), null, new BigDecimal("100.00"))));
+        when(jwtDecoder.decode("invalid-payslip-write-token")).thenThrow(new BadJwtException("Invalid test token."));
+        var unauthenticated = List.of(client(), bearer("invalid-payslip-write-token"));
+        var forbidden = List.of(authenticated("HR", List.of(companyId.toString())),
+            authenticated("FINANCE", List.of(UUID.randomUUID().toString())));
+        for (RestClient caller : unauthenticated) {
+            assertThat(createStatus(caller, request)).isEqualTo(401);
+        }
+        for (RestClient caller : forbidden) {
+            assertThat(createStatus(caller, request)).isEqualTo(403);
+        }
+        assertThat(payslipRepository.findByPayrollId(payroll.getId())).isEmpty();
+
         var created = client.post().uri("/payslip").body(request).retrieve().toEntity(PayslipDtos.Response.class);
         assertThat(created.getStatusCode().value()).isEqualTo(201);
         UUID payslipId = created.getBody().id();
@@ -95,6 +107,17 @@ class PayslipControllerTests {
 
         var update = new PayslipDtos.Request(payroll.getId(), contractId, new BigDecimal("3100.00"), List.of(
             new PayslipDtos.ItemRequest(salary.id(), null, new BigDecimal("3100.00"))));
+        for (RestClient caller : unauthenticated) {
+            assertThat(updateStatus(caller, payslipId, update)).isEqualTo(401);
+            assertThat(deleteStatus(caller, "/payslip/{id}", payslipId)).isEqualTo(401);
+        }
+        for (RestClient caller : forbidden) {
+            assertThat(updateStatus(caller, payslipId, update)).isEqualTo(403);
+            assertThat(deleteStatus(caller, "/payslip/{id}", payslipId)).isEqualTo(403);
+        }
+        assertThat(client.get().uri("/payslip/{id}", payslipId).retrieve().body(PayslipDtos.Response.class))
+            .isEqualTo(saved);
+
         var updated = client.put().uri("/payslip/{id}", payslipId).body(update)
             .retrieve().body(PayslipDtos.Response.class);
         assertThat(updated.netPay()).isEqualByComparingTo("3100.00");
@@ -109,7 +132,10 @@ class PayslipControllerTests {
         assertThat(client.put().uri("/payslip/{id}", payslipId).body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
 
+        assertThat(createStatus(client, request)).isEqualTo(409);
         assertThat(deleteStatus(client, "/payslip/{id}", payslipId)).isEqualTo(409);
+        assertThat(client.get().uri("/payslip/{id}", payslipId).retrieve().body(PayslipDtos.Response.class))
+            .isEqualTo(reloaded);
         assertThat(deleteStatus(client, "/payroll/{id}", payroll.getId())).isEqualTo(409);
 
         payroll.setStatus(PayrollStatus.DRAFT);
@@ -199,6 +225,15 @@ class PayslipControllerTests {
 
     private RestClient client() {
         return RestClient.create("http://127.0.0.1:" + port);
+    }
+
+    private static int createStatus(RestClient client, PayslipDtos.Request request) {
+        return client.post().uri("/payslip").body(request).exchange((sent, response) -> response.getStatusCode().value());
+    }
+
+    private static int updateStatus(RestClient client, UUID id, PayslipDtos.Request request) {
+        return client.put().uri("/payslip/{id}", id).body(request)
+            .exchange((sent, response) -> response.getStatusCode().value());
     }
 
     private static int deleteStatus(RestClient client, String path, UUID id) {
