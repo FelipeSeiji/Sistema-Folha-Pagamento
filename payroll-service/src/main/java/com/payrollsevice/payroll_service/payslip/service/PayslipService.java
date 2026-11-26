@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -21,6 +22,8 @@ import com.payrollsevice.payroll_service.processing.repository.PayrollRepository
 import com.payrollsevice.payroll_service.rubric.model.Rubric;
 import com.payrollsevice.payroll_service.rubric.model.RubricType;
 import com.payrollsevice.payroll_service.rubric.repository.RubricRepository;
+
+import com.payrollsevice.payroll_service.security.PayrollCompanyAccess;
 
 import lombok.RequiredArgsConstructor;
 
@@ -108,15 +111,20 @@ public class PayslipService {
     }
 
     @Transactional(readOnly = true)
-    public Page<PayslipDtos.Response> list(Pageable pageable) {
-        return repository.findAll(pageable).map(PayslipDtos.Response::from);
+    public Page<PayslipDtos.Response> list(Pageable pageable, Jwt principal) {
+        var companyIds = PayrollCompanyAccess.companyIds(principal);
+        if (companyIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return repository.findByPayrollCompanyIdIn(companyIds, pageable).map(PayslipDtos.Response::from);
     }
 
     @Transactional(readOnly = true)
-    public PayslipDtos.Response findById(UUID id) {
-        return repository.findById(id)
-            .map(PayslipDtos.Response::from)
+    public PayslipDtos.Response findById(UUID id, Jwt principal) {
+        Payslip payslip = repository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payslip not found."));
+        PayrollCompanyAccess.require(principal, payslip.getPayroll().getCompanyId());
+        return PayslipDtos.Response.from(payslip);
     }
 
     private Payslip requirePayslipForUpdate(UUID id) {

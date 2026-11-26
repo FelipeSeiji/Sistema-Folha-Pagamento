@@ -1,10 +1,13 @@
 package com.payrollsevice.payroll_service.payslip.repository;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -16,6 +19,8 @@ import jakarta.persistence.LockModeType;
 
 public interface PayslipRepository extends JpaRepository<Payslip, UUID> {
     List<Payslip> findByPayrollId(UUID payrollId);
+
+    Page<Payslip> findByPayrollCompanyIdIn(Collection<UUID> companyIds, Pageable pageable);
 
     @Query("select p.id from Payslip p where p.payroll.id = :payrollId")
     List<UUID> findIdsByPayrollId(@Param("payrollId") UUID payrollId);
