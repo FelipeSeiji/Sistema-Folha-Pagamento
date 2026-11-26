@@ -36,6 +36,7 @@ public class PayrollSecurityConfig {
             .securityMatcher(new OrRequestMatcher(
                 paths.matcher("/payroll/*/finance-report"), paths.matcher("/payroll/*/finance-report.csv"),
                 paths.matcher("/payroll/*/calculate"), paths.matcher("/payroll/*/close"),
+                paths.matcher(HttpMethod.POST, "/payroll/{id}/calculation-preview"),
                 paths.matcher(HttpMethod.GET, "/payroll"), paths.matcher(HttpMethod.HEAD, "/payroll"),
                 paths.matcher(HttpMethod.GET, "/payroll/{id}"), paths.matcher(HttpMethod.HEAD, "/payroll/{id}"),
                 paths.matcher(HttpMethod.GET, "/payroll/{id}/summary"),
