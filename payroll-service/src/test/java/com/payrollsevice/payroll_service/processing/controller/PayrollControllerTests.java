@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -291,8 +292,19 @@ class PayrollControllerTests {
     void retriesFailedSummaryInsertAndIgnoresRedelivery() {
         var fixture = prepareCalculation();
         UUID payrollId = fixture.payrollId();
+        RestClient http = client();
+        String route = "/payroll/{id}/summary";
+        assertThat(http.get().uri(route, UUID.randomUUID())
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
+        assertThat(http.get().uri(route, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
         assertThat(calculateStatus(fixture)).isEqualTo(200);
-        client().post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+        http.post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+
+        var pending = http.get().uri(route, payrollId).retrieve().toBodilessEntity();
+        assertThat(pending.getStatusCode().value()).isEqualTo(202);
+        assertThat(pending.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("5");
+        assertThat(pending.getHeaders().getCacheControl()).isEqualTo("no-store");
         var event = outboxRepository.findByPayrollId(payrollId).getFirst();
         var message = new PayrollClosedMessage(event.getId(), event.getEventType(), event.getOccurredAt(),
             event.getPayload());
@@ -321,7 +333,7 @@ class PayrollControllerTests {
         assertThat(summary.getTotalDeductions()).isEqualByComparingTo("0.00");
         assertThat(summary.getNetPay()).isEqualByComparingTo("6000.00");
 
-        var response = client().get().uri("/payroll/{id}/summary", payrollId)
+        var response = http.get().uri(route, payrollId)
             .retrieve().toEntity(PayrollDtos.SummaryResponse.class);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         var body = response.getBody();
