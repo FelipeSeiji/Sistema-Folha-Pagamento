@@ -204,7 +204,7 @@ class PayrollControllerTests {
             assertThat(payslip.id()).isNotNull();
             assertThat(payslip.contractId()).isEqualTo(contractId);
             assertThat(payslip.netPay()).isEqualByComparingTo(preview[0].netPay());
-            var persisted = http.get().uri("/payslip/{id}", payslip.id())
+            var persisted = financeClient(payroll.id()).get().uri("/payslip/{id}", payslip.id())
                 .retrieve().body(PayslipDtos.Response.class);
             assertThat(persisted.netPay()).isEqualByComparingTo(payslip.netPay());
             assertThat(persisted.items()).extracting(PayslipDtos.ItemResponse::rubricId)
