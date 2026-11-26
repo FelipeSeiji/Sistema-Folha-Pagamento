@@ -1,6 +1,7 @@
 package com.payrollsevice.payroll_service.processing.controller;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -8,7 +9,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -79,6 +82,17 @@ public class PayrollController {
     @GetMapping("/{id}/finance-report")
     public ResponseEntity<PayrollDtos.FinanceReport> findFinanceReport(@PathVariable("id") UUID id) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payrollService.findFinanceReport(id));
+    }
+
+    @GetMapping(value = "/{id}/finance-report.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> downloadFinanceReport(@PathVariable("id") UUID id) {
+        byte[] csv = FinanceReportCsv.encode(payrollService.findFinanceReport(id));
+        var attachment = ContentDisposition.attachment().filename("finance-report-" + id + ".csv").build();
+        return ResponseEntity.ok()
+            .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+            .header(HttpHeaders.CONTENT_DISPOSITION, attachment.toString())
+            .cacheControl(CacheControl.noStore())
+            .body(csv);
     }
 
     @GetMapping("/{id}/summary")
