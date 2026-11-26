@@ -192,15 +192,34 @@ class PayrollControllerTests {
         UUID absence = createRubric(http, companyId, "ABSENCE", RubricType.DEDUCTION);
         var request = new PayrollDtos.CalculationRequest(salary, overtime, absence, new BigDecimal("1.50"));
         String route = "/payroll/{id}/calculation-preview";
+        RestClient finance = financeClient(payroll.id());
+        when(jwtDecoder.decode("invalid-preview-token")).thenThrow(new BadJwtException("Invalid test token."));
+        RestClient invalid = client().mutate().defaultHeaders(headers ->
+            headers.setBearerAuth("invalid-preview-token")).build();
+        RestClient hr = authenticatedClient("HR", List.of(companyId.toString()));
+        RestClient outside = authenticatedClient("FINANCE", List.of(UUID.randomUUID().toString()));
 
-        assertThat(http.post().uri(route, payroll.id()).body(request)
+        for (RestClient unauthenticated : List.of(client(), invalid)) {
+            assertThat(unauthenticated.post().uri(route, payroll.id()).body(request)
+                .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(401);
+        }
+        for (RestClient forbidden : List.of(hr, outside)) {
+            assertThat(forbidden.post().uri(route, payroll.id()).body(request)
+                .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(403);
+        }
+
+        assertThat(finance.post().uri(route, payroll.id()).body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(422);
         http.post().uri("/attendance-summary")
             .body(new AttendanceSummaryDtos.Request(contractId, month, 6000L, 120L, 60L))
             .retrieve().toBodilessEntity();
 
-        var preview = http.post().uri(route, payroll.id()).body(request)
-            .retrieve().body(PayslipDtos.Preview[].class);
+        var previewResponse = finance.post().uri(route, payroll.id()).body(request)
+            .retrieve().toEntity(PayslipDtos.Preview[].class);
+        assertThat(previewResponse.getStatusCode().value()).isEqualTo(200);
+        var preview = previewResponse.getBody();
+        assertThat(payslipRepository.findByPayrollId(payroll.id())).isEmpty();
+        assertThat(outboxRepository.findByPayrollId(payroll.id())).isEmpty();
         assertThat(preview).singleElement().satisfies(payslip -> {
             assertThat(payslip.contractId()).isEqualTo(contractId);
             assertThat(payslip.appliedBaseSalary()).isEqualByComparingTo("1700.00");
