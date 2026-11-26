@@ -1,7 +1,6 @@
 package com.payrollsevice.payroll_service.outbox.service;
 
 import java.time.Instant;
-import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -14,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.payrollsevice.payroll_service.outbox.model.PayrollClosedMessage;
 import com.payrollsevice.payroll_service.outbox.model.PayrollOutboxEvent;
 import com.payrollsevice.payroll_service.outbox.repository.PayrollOutboxRepository;
 
@@ -23,7 +23,6 @@ import tools.jackson.databind.json.JsonMapper;
 @EnableScheduling
 @ConditionalOnProperty(name = "payroll.outbox.publisher.enabled", havingValue = "true", matchIfMissing = true)
 public class PayrollOutboxPublisher {
-    private static final String TOPIC = "payroll.closed";
     private static final int BATCH_SIZE = 20;
 
     private final PayrollOutboxRepository repository;
@@ -53,10 +52,10 @@ public class PayrollOutboxPublisher {
     }
 
     private boolean publish(PayrollOutboxEvent event) {
-        var message = new Message(event.getId(), event.getEventType(), event.getOccurredAt(), event.getPayload());
+        var message = new PayrollClosedMessage(event.getId(), event.getEventType(), event.getOccurredAt(), event.getPayload());
         String value = jsonMapper.writeValueAsString(message);
         try {
-            kafka.send(TOPIC, event.getPayrollId().toString(), value).get(15, TimeUnit.SECONDS);
+            kafka.send(PayrollClosedMessage.TOPIC, event.getPayrollId().toString(), value).get(15, TimeUnit.SECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted publishing outbox event " + event.getId(), exception);
@@ -65,8 +64,5 @@ public class PayrollOutboxPublisher {
         }
         event.setPublishedAt(Instant.now());
         return true;
-    }
-
-    private record Message(UUID eventId, String eventType, Instant occurredAt, PayrollOutboxEvent.PayrollClosed payload) {
     }
 }
