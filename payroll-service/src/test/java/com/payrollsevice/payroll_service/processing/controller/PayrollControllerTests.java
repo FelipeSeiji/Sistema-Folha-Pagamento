@@ -120,7 +120,7 @@ class PayrollControllerTests {
         when(personnelClient.getPayrollInputs(companyId, period))
             .thenReturn(new PersonnelPayrollInput(companyId, period, List.of(contract)));
 
-        RestClient client = client();
+        RestClient client = authenticatedClient("FINANCE", List.of(companyId.toString()));
         var request = new PayrollDtos.CreateRequest(companyId, period, PayrollType.REGULAR);
         var created = client.post().uri("/payroll").body(request).retrieve().toEntity(PayrollDtos.Response.class);
         assertThat(created.getStatusCode().value()).isEqualTo(201);
@@ -149,7 +149,7 @@ class PayrollControllerTests {
             .thenThrow(new PersonnelUnavailableException("Personnel is unavailable.", null));
 
         var request = new PayrollDtos.CreateRequest(companyId, period, PayrollType.REGULAR);
-        assertThat(client().post().uri("/payroll").body(request)
+        assertThat(authenticatedClient("FINANCE", List.of(companyId.toString())).post().uri("/payroll").body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(503);
         assertThat(repository.existsByCompanyIdAndPeriodAndType(companyId, period.atDay(1), PayrollType.REGULAR))
             .isFalse();
@@ -157,7 +157,7 @@ class PayrollControllerTests {
 
     @Test
     void rejectsInvalidCreateRequest() {
-        assertThat(client().post().uri("/payroll").contentType(MediaType.APPLICATION_JSON).body("{}")
+        assertThat(authenticatedClient("FINANCE", List.of()).post().uri("/payroll").contentType(MediaType.APPLICATION_JSON).body("{}")
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(400);
         verifyNoInteractions(personnelClient);
     }
@@ -184,7 +184,7 @@ class PayrollControllerTests {
             .thenReturn(new PersonnelPayrollInput(companyId, month, List.of(contract)));
 
         RestClient http = client();
-        var payroll = http.post().uri("/payroll")
+        var payroll = authenticatedClient("FINANCE", List.of(companyId.toString())).post().uri("/payroll")
             .body(new PayrollDtos.CreateRequest(companyId, month, PayrollType.REGULAR))
             .retrieve().body(PayrollDtos.Response.class);
         UUID salary = createRubric(http, companyId, "SALARY", RubricType.EARNING);
@@ -633,6 +633,55 @@ class PayrollControllerTests {
         return client.get().uri(route).exchange((sent, response) -> response.getStatusCode().value());
     }
 
+    @Test
+    void onlyAuthorizedFinanceCanCreateAndDeleteDraftPayrolls() {
+        UUID companyId = UUID.randomUUID();
+        YearMonth period = YearMonth.of(2026, 11);
+        var request = new PayrollDtos.CreateRequest(companyId, period, PayrollType.REGULAR);
+        RestClient finance = authenticatedClient("FINANCE", List.of(companyId.toString()));
+        RestClient hr = authenticatedClient("HR", List.of(companyId.toString()));
+        RestClient outside = authenticatedClient("FINANCE", List.of(UUID.randomUUID().toString()));
+        when(jwtDecoder.decode("invalid-write-token")).thenThrow(new BadJwtException("Invalid test token."));
+        RestClient invalid = client().mutate().defaultHeaders(headers ->
+            headers.setBearerAuth("invalid-write-token")).build();
+
+        for (RestClient unauthenticated : List.of(client(), invalid)) {
+            assertThat(createPayrollStatus(unauthenticated, request)).isEqualTo(401);
+        }
+        for (RestClient forbidden : List.of(hr, outside)) {
+            assertThat(createPayrollStatus(forbidden, request)).isEqualTo(403);
+        }
+        verifyNoInteractions(personnelClient);
+        assertThat(repository.existsByCompanyIdAndPeriodAndType(companyId, period.atDay(1), PayrollType.REGULAR))
+            .isFalse();
+
+        when(personnelClient.getPayrollInputs(companyId, period))
+            .thenReturn(new PersonnelPayrollInput(companyId, period, List.of()));
+        var created = finance.post().uri("/payroll").body(request).retrieve().toEntity(PayrollDtos.Response.class);
+        assertThat(created.getStatusCode().value()).isEqualTo(201);
+        UUID id = created.getBody().id();
+
+        for (RestClient unauthenticated : List.of(client(), invalid)) {
+            assertThat(deletePayrollStatus(unauthenticated, id)).isEqualTo(401);
+        }
+        for (RestClient forbidden : List.of(hr, outside)) {
+            assertThat(deletePayrollStatus(forbidden, id)).isEqualTo(403);
+        }
+        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(PayrollStatus.DRAFT);
+        verify(personnelClient).getPayrollInputs(companyId, period);
+
+        assertThat(deletePayrollStatus(finance, id)).isEqualTo(204);
+        assertThat(repository.findById(id)).isEmpty();
+    }
+
+    private static int createPayrollStatus(RestClient client, PayrollDtos.CreateRequest request) {
+        return client.post().uri("/payroll").body(request).exchange((sent, response) -> response.getStatusCode().value());
+    }
+
+    private static int deletePayrollStatus(RestClient client, UUID id) {
+        return client.delete().uri("/payroll/{id}", id).exchange((sent, response) -> response.getStatusCode().value());
+    }
+
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -680,7 +729,7 @@ class PayrollControllerTests {
             .thenReturn(new PersonnelPayrollInput(companyId, month, contracts));
 
         RestClient http = client();
-        var payroll = http.post().uri("/payroll")
+        var payroll = authenticatedClient("FINANCE", List.of(companyId.toString())).post().uri("/payroll")
             .body(new PayrollDtos.CreateRequest(companyId, month, PayrollType.REGULAR))
             .retrieve().body(PayrollDtos.Response.class);
         for (var contract : contracts) {

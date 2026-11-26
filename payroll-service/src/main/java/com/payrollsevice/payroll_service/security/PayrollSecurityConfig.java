@@ -40,6 +40,7 @@ public class PayrollSecurityConfig {
                 paths.matcher(HttpMethod.GET, "/payroll/{id}"), paths.matcher(HttpMethod.HEAD, "/payroll/{id}"),
                 paths.matcher(HttpMethod.GET, "/payroll/{id}/summary"),
                 paths.matcher(HttpMethod.HEAD, "/payroll/{id}/summary"),
+                paths.matcher(HttpMethod.POST, "/payroll"), paths.matcher(HttpMethod.DELETE, "/payroll/{id}"),
                 paths.matcher(HttpMethod.POST, "/payroll/{id}/payslip-documents"),
                 paths.matcher(HttpMethod.GET, "/payslip"), paths.matcher(HttpMethod.GET, "/payslip/{id}"),
                 paths.matcher(HttpMethod.HEAD, "/payslip"), paths.matcher(HttpMethod.HEAD, "/payslip/{id}"),

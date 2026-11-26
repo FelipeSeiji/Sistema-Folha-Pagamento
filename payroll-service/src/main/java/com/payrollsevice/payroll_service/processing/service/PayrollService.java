@@ -47,7 +47,8 @@ public class PayrollService {
     private final ClosedPayrollSummaryRepository summaryRepository;
     private final PayslipRepository payslipRepository;
 
-    public PayrollDtos.Response create(PayrollDtos.CreateRequest request) {
+    public PayrollDtos.Response create(PayrollDtos.CreateRequest request, Jwt principal) {
+        PayrollCompanyAccess.require(principal, request.companyId());
         LocalDate period = request.period().atDay(1);
         if (repository.existsByCompanyIdAndPeriodAndType(request.companyId(), period, request.type())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Payroll already exists for this company, period and type.");
@@ -84,8 +85,9 @@ public class PayrollService {
     }
 
     @Transactional
-    public void delete(UUID id) {
-        Payroll payroll = requirePayroll(id);
+    public void delete(UUID id, Jwt principal) {
+        Payroll payroll = requirePayrollForUpdate(id);
+        PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         if (payroll.getStatus() != PayrollStatus.DRAFT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only draft payrolls can be deleted.");
         }
@@ -108,8 +110,7 @@ public class PayrollService {
 
     @Transactional
     public PayrollDtos.Response close(UUID id, Jwt principal) {
-        Payroll payroll = repository.findForUpdateById(id)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
+        Payroll payroll = requirePayrollForUpdate(id);
         PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         if (payroll.getStatus() != PayrollStatus.CALCULATED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only calculated payrolls can be closed.");
@@ -159,6 +160,11 @@ public class PayrollService {
         Payroll payroll = requirePayroll(id);
         PayrollCompanyAccess.require(principal, payroll.getCompanyId());
         return payroll;
+    }
+
+    private Payroll requirePayrollForUpdate(UUID id) {
+        return repository.findForUpdateById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payroll not found."));
     }
 
     private Payroll requirePayroll(UUID id) {

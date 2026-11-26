@@ -42,8 +42,10 @@ public class PayrollController {
     private final PayslipDocumentDispatcher documents;
 
     @PostMapping
-    public ResponseEntity<PayrollDtos.Response> create(@Valid @RequestBody PayrollDtos.CreateRequest request) {
-        PayrollDtos.Response payroll = payrollService.create(request);
+    public ResponseEntity<PayrollDtos.Response> create(
+        @Valid @RequestBody PayrollDtos.CreateRequest request, @AuthenticationPrincipal Jwt principal
+    ) {
+        PayrollDtos.Response payroll = payrollService.create(request, principal);
         URI location = ServletUriComponentsBuilder.fromCurrentRequestUri()
             .path("/{id}")
             .buildAndExpand(payroll.id())
@@ -124,8 +126,8 @@ public class PayrollController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") UUID id) {
-        payrollService.delete(id);
+    public ResponseEntity<Void> delete(@PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal) {
+        payrollService.delete(id, principal);
         return ResponseEntity.noContent().build();
     }
 }
