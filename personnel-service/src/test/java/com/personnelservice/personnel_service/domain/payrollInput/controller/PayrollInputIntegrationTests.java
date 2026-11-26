@@ -1,6 +1,8 @@
 package com.personnelservice.personnel_service.domain.payrollInput.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,6 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.personnelservice.personnel_service.domain.company.model.Company;
@@ -39,8 +44,13 @@ class PayrollInputIntegrationTests {
     @Autowired
     private EntityManager entities;
 
+    @MockitoBean
+    private JwtDecoder decoder;
+
     @Test
     void returnsHistoricalSegmentsAndRejectsInconsistentCoverage() throws Exception {
+        when(decoder.decode("service-token")).thenReturn(Jwt.withTokenValue("service-token")
+            .header("alg", "RS256").claim("scope", "personnel.payroll.read").build());
         String suffix = String.format(java.util.Locale.ROOT, "%011d",
             java.util.concurrent.ThreadLocalRandom.current().nextLong(100_000_000_000L));
         var fixture = transactions.execute(status -> createFixture(suffix));
@@ -48,6 +58,13 @@ class PayrollInputIntegrationTests {
         UUID contract = fixture.contractId();
 
         try (HttpClient client = HttpClient.newHttpClient()) {
+
+            var owner = get(client, "/internal/employment-contract/" + contract + "/company");
+            assertThat(owner.statusCode()).isEqualTo(200);
+            assertThat(JsonPath.<String>read(owner.body(), "$.id")).isEqualTo(contract.toString());
+            assertThat(JsonPath.<String>read(owner.body(), "$.companyId")).isEqualTo(company.toString());
+            assertThat(get(client, "/internal/employment-contract/" + UUID.randomUUID() + "/company").statusCode())
+                .isEqualTo(404);
 
             var result = get(client, company, "2026-11");
             assertThat(result.statusCode()).isEqualTo(200);
@@ -132,9 +149,13 @@ class PayrollInputIntegrationTests {
     }
 
     private HttpResponse<String> get(HttpClient client, UUID company, String period) throws Exception {
-        URI uri = URI.create("http://127.0.0.1:" + port + "/internal/payroll-input?companyId=" + company
-            + "&period=" + period);
-        var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10)).build();
+        return get(client, "/internal/payroll-input?companyId=" + company + "&period=" + period);
+    }
+
+    private HttpResponse<String> get(HttpClient client, String path) throws Exception {
+        URI uri = URI.create("http://127.0.0.1:" + port + path);
+        var request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10))
+            .header("Authorization", "Bearer service-token").build();
         return client.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }

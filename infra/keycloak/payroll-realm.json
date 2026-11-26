@@ -57,6 +57,42 @@
         "pkce.code.challenge.method": "S256"
       },
       "publicClient": true
+    },
+    {
+      "clientId": "payroll-personnel-service",
+      "name": "Payroll to personnel service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": false,
+      "optionalClientScopes": ["personnel.payroll.read"],
+      "protocolMappers": [
+        {
+          "name": "Personnel service audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "personnel-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "personnel.payroll.read",
+      "description": "Read payroll inputs and contract companies",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     }
   ],
   "components": {

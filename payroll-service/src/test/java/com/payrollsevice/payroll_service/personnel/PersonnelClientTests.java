@@ -3,6 +3,7 @@ package com.payrollsevice.payroll_service.personnel;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -10,15 +11,25 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import java.math.BigDecimal;
 import java.net.ConnectException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+
+import com.sun.net.httpserver.HttpServer;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
@@ -34,11 +45,45 @@ class PersonnelClientTests {
     private MockRestServiceServer server;
     private PersonnelClient client;
 
+    private HttpServer tokenServer;
+
     @BeforeEach
-    void configureClient() {
+    void configureClient() throws IOException {
         var builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new PersonnelClient(builder, BASE_URL);
+        tokenServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        tokenServer.createContext("/token", exchange -> {
+            String form = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+            if (!exchange.getRequestMethod().equals("POST") || !"Basic cGF5cm9sbDp0ZXN0".equals(authorization)
+                    || !form.contains("grant_type=client_credentials") || !form.contains("scope=personnel.payroll.read")) {
+                exchange.sendResponseHeaders(400, -1);
+                exchange.close();
+                return;
+            }
+            byte[] body = """
+                {"access_token":"service-token","token_type":"Bearer","expires_in":300}
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(body);
+            }
+        });
+        tokenServer.start();
+        var registration = ClientRegistration.withRegistrationId("personnel")
+            .clientId("payroll").clientSecret("test").scope("personnel.payroll.read")
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .tokenUri("http://127.0.0.1:" + tokenServer.getAddress().getPort() + "/token")
+            .build();
+        var registrations = new InMemoryClientRegistrationRepository(registration);
+        client = new PersonnelClient(builder, BASE_URL, registrations,
+            new InMemoryOAuth2AuthorizedClientService(registrations));
+    }
+
+    @AfterEach
+    void stopTokenServer() {
+        tokenServer.stop(0);
     }
 
     @Test
@@ -46,6 +91,7 @@ class PersonnelClientTests {
         UUID contract = UUID.randomUUID();
         UUID employee = UUID.randomUUID();
         server.expect(requestTo(INPUT_URL)).andExpect(method(HttpMethod.GET))
+            .andExpect(header("Authorization", "Bearer service-token"))
             .andRespond(withSuccess("""
                 {"companyId":"%s","period":"2026-11","contracts":[
                   {"contractId":"%s","employeeId":"%s","employeeName":"Employee","registrationNumber":"001",
@@ -93,7 +139,8 @@ class PersonnelClientTests {
     @Test
     void resolvesCompanyFromThePersonnelContractResponse() {
         UUID contract = UUID.randomUUID();
-        server.expect(requestTo(BASE_URL + "/employment-contract/" + contract)).andExpect(method(HttpMethod.GET))
+        server.expect(requestTo(BASE_URL + "/internal/employment-contract/" + contract + "/company")).andExpect(method(HttpMethod.GET))
+            .andExpect(header("Authorization", "Bearer service-token"))
             .andRespond(withSuccess("""
                 {"id":"%s","companyId":"%s","registrationNumber":"001"}
                 """.formatted(contract, COMPANY), MediaType.APPLICATION_JSON));
