@@ -198,7 +198,7 @@ class PayrollControllerTests {
                 .containsExactly(salary, overtime, absence);
         });
         assertThat(repository.findById(payroll.id()).orElseThrow().getStatus()).isEqualTo(PayrollStatus.DRAFT);
-        var calculated = http.post().uri("/payroll/{id}/calculate", payroll.id()).body(request)
+        var calculated = financeClient(payroll.id()).post().uri("/payroll/{id}/calculate", payroll.id()).body(request)
             .retrieve().body(PayslipDtos.Response[].class);
         assertThat(calculated).singleElement().satisfies(payslip -> {
             assertThat(payslip.id()).isNotNull();
@@ -211,7 +211,7 @@ class PayrollControllerTests {
                 .containsExactly(salary, overtime, absence);
         });
         assertThat(repository.findById(payroll.id()).orElseThrow().getStatus()).isEqualTo(PayrollStatus.CALCULATED);
-        assertThat(http.post().uri("/payroll/{id}/calculate", payroll.id()).body(request)
+        assertThat(financeClient(payroll.id()).post().uri("/payroll/{id}/calculate", payroll.id()).body(request)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
     }
 
@@ -237,7 +237,8 @@ class PayrollControllerTests {
     @Test
     void concurrentCalculationRequestsCreateOnlyOnePayslipPerContract() throws Exception {
         var fixture = prepareCalculation();
-        assertThat(runConcurrently(() -> calculateStatus(fixture))).containsExactlyInAnyOrder(200, 409);
+        RestClient http = financeClient(fixture.payrollId());
+        assertThat(runConcurrently(() -> calculateStatus(http, fixture))).containsExactlyInAnyOrder(200, 409);
 
         assertThat(repository.findById(fixture.payrollId()).orElseThrow().getStatus())
             .isEqualTo(PayrollStatus.CALCULATED);
@@ -248,9 +249,9 @@ class PayrollControllerTests {
     @Test
     void closesOnlyCalculatedPayrolls() {
         var fixture = prepareCalculation();
-        RestClient http = client();
-        String route = "/payroll/{id}/close";
         UUID payrollId = fixture.payrollId();
+        RestClient http = financeClient(payrollId);
+        String route = "/payroll/{id}/close";
 
         assertThat(http.post().uri(route, UUID.randomUUID())
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
@@ -273,7 +274,8 @@ class PayrollControllerTests {
         UUID payrollId = fixture.payrollId();
         long version = repository.findById(payrollId).orElseThrow().getVersion();
 
-        var statuses = runConcurrently(() -> client().post().uri("/payroll/{id}/close", payrollId)
+        RestClient http = financeClient(payrollId);
+        var statuses = runConcurrently(() -> http.post().uri("/payroll/{id}/close", payrollId)
             .exchange((sent, response) -> response.getStatusCode().value()));
 
         assertThat(statuses).containsExactlyInAnyOrder(200, 409);
@@ -297,7 +299,7 @@ class PayrollControllerTests {
         var existing = outboxRepository.saveAndFlush(new PayrollOutboxEvent(calculated.getId(),
             calculated.getCompanyId(), YearMonth.from(calculated.getPeriod()), Instant.now()));
 
-        assertThat(client().post().uri("/payroll/{id}/close", calculated.getId())
+        assertThat(financeClient(calculated.getId()).post().uri("/payroll/{id}/close", calculated.getId())
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
         var reloaded = repository.findById(calculated.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(PayrollStatus.CALCULATED);
@@ -317,7 +319,7 @@ class PayrollControllerTests {
         assertThat(http.get().uri(route, payrollId)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
         assertThat(calculateStatus(fixture)).isEqualTo(200);
-        http.post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+        financeClient(payrollId).post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
 
         var pending = http.get().uri(route, payrollId).retrieve().toBodilessEntity();
         assertThat(pending.getStatusCode().value()).isEqualTo(202);
@@ -366,7 +368,7 @@ class PayrollControllerTests {
     void generatesOnePdfAfterAStorageFailureAndRedelivery() {
         var fixture = prepareCalculation();
         assertThat(calculateStatus(fixture)).isEqualTo(200);
-        client().post().uri("/payroll/{id}/close", fixture.payrollId()).retrieve().toBodilessEntity();
+        financeClient(fixture.payrollId()).post().uri("/payroll/{id}/close", fixture.payrollId()).retrieve().toBodilessEntity();
         UUID payslipId = payslipRepository.findIdsByPayrollId(fixture.payrollId()).getFirst();
 
         jdbc.execute("ALTER TABLE tb_payslip_document ADD CONSTRAINT ck_test_reject_document "
@@ -404,7 +406,7 @@ class PayrollControllerTests {
         assertThat(calculateStatus(fixture)).isEqualTo(200);
         assertThat(http.get().uri(route, payrollId)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
-        http.post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+        financeClient(payrollId).post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
 
         var response = http.get().uri(route, payrollId).retrieve().toEntity(PayrollDtos.FinanceReport.class);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
@@ -441,7 +443,7 @@ class PayrollControllerTests {
         assertThat(calculateStatus(fixture)).isEqualTo(200);
         assertThat(http.get().uri(route, payrollId)
             .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
-        http.post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+        financeClient(payrollId).post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
 
         var csv = http.get().uri(route, payrollId).retrieve().toEntity(byte[].class);
         assertThat(csv.getStatusCode().value()).isEqualTo(200);
@@ -463,7 +465,7 @@ class PayrollControllerTests {
         UUID payrollId = fixture.payrollId();
         String company = repository.findById(payrollId).orElseThrow().getCompanyId().toString();
         assertThat(calculateStatus(fixture)).isEqualTo(200);
-        client().post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+        financeClient(payrollId).post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
 
         RestClient hr = authenticatedClient("HR", List.of(company));
         RestClient wrongCompany = authenticatedClient("FINANCE", List.of(UUID.randomUUID().toString()));
@@ -477,6 +479,34 @@ class PayrollControllerTests {
             assertThat(authorized.get().uri(path, payrollId)
                 .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(200);
         }
+    }
+
+    @Test
+    void requiresFinanceAndCompanyAccessToCalculateAndClosePayroll() {
+        var fixture = prepareCalculation();
+        UUID payrollId = fixture.payrollId();
+        String company = repository.findById(payrollId).orElseThrow().getCompanyId().toString();
+        RestClient hr = authenticatedClient("HR", List.of(company));
+        RestClient wrongCompany = authenticatedClient("FINANCE", List.of(UUID.randomUUID().toString()));
+
+        assertThat(calculateStatus(client(), fixture)).isEqualTo(401);
+        assertThat(calculateStatus(hr, fixture)).isEqualTo(403);
+        assertThat(calculateStatus(wrongCompany, fixture)).isEqualTo(403);
+        assertThat(repository.findById(payrollId).orElseThrow().getStatus()).isEqualTo(PayrollStatus.DRAFT);
+        assertThat(payslipRepository.findByPayrollId(payrollId)).isEmpty();
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+
+        String close = "/payroll/{id}/close";
+        assertThat(client().post().uri(close, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(401);
+        for (RestClient denied : List.of(hr, wrongCompany)) {
+            assertThat(denied.post().uri(close, payrollId)
+                .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(403);
+        }
+        assertThat(repository.findById(payrollId).orElseThrow().getStatus()).isEqualTo(PayrollStatus.CALCULATED);
+        assertThat(outboxRepository.findByPayrollId(payrollId)).isEmpty();
+        assertThat(financeClient(payrollId).post().uri(close, payrollId)
+            .retrieve().toBodilessEntity().getStatusCode().value()).isEqualTo(200);
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
@@ -501,7 +531,11 @@ class PayrollControllerTests {
     }
 
     private int calculateStatus(CalculationFixture fixture) {
-        return client().post().uri("/payroll/{id}/calculate", fixture.payrollId()).body(fixture.request())
+        return calculateStatus(financeClient(fixture.payrollId()), fixture);
+    }
+
+    private static int calculateStatus(RestClient http, CalculationFixture fixture) {
+        return http.post().uri("/payroll/{id}/calculate", fixture.payrollId()).body(fixture.request())
             .exchange((sent, response) -> response.getStatusCode().value());
     }
 
