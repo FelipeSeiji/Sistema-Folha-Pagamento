@@ -6,6 +6,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
@@ -16,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -414,6 +418,39 @@ class PayrollControllerTests {
         assertThat(report.totalNetPay()).isEqualByComparingTo("5985.00");
     }
 
+    @Test
+    void exportsCsvWithAccentedNamesAndLeadingZerosOnlyAfterClosing(@TempDir Path output) throws Exception {
+        var fixture = prepareCalculation("João da Conceição");
+        UUID payrollId = fixture.payrollId();
+        RestClient http = client();
+        String route = "/payroll/{id}/finance-report.csv";
+
+        assertThat(http.get().uri(route, UUID.randomUUID())
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(404);
+        assertThat(http.get().uri(route, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+
+        jdbc.update("UPDATE tb_attendance_summary SET absence_minutes = 60 WHERE contract_id = ?",
+            fixture.firstContractId());
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        assertThat(http.get().uri(route, payrollId)
+            .<Integer>exchange((sent, response) -> response.getStatusCode().value())).isEqualTo(409);
+        http.post().uri("/payroll/{id}/close", payrollId).retrieve().toBodilessEntity();
+
+        var csv = http.get().uri(route, payrollId).retrieve().toEntity(byte[].class);
+        assertThat(csv.getStatusCode().value()).isEqualTo(200);
+        assertThat(csv.getHeaders().getContentType()).isEqualTo(new MediaType("text", "csv", StandardCharsets.UTF_8));
+        assertThat(csv.getHeaders().getContentDisposition().getFilename())
+            .isEqualTo("finance-report-" + payrollId + ".csv");
+        assertThat(csv.getHeaders().getCacheControl()).isEqualTo("no-store");
+        assertThat(new String(csv.getBody(), StandardCharsets.UTF_8)).isEqualTo(
+            "\uFEFFCompetência;Nome;Matrícula;Valor líquido\r\n"
+                + "11/2026;\"João da Conceição 001\";\"001\";2985,00\r\n"
+                + "11/2026;\"João da Conceição 002\";\"002\";3000,00\r\n"
+                + "11/2026;TOTAL;;5985,00\r\n");
+        Files.write(output.resolve("finance-report-verification.csv"), csv.getBody());
+    }
+
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -441,13 +478,17 @@ class PayrollControllerTests {
     }
 
     private CalculationFixture prepareCalculation() {
+        return prepareCalculation("Employee");
+    }
+
+    private CalculationFixture prepareCalculation(String employeeNamePrefix) {
         UUID companyId = UUID.randomUUID();
         YearMonth month = YearMonth.of(2026, 11);
         var start = month.atDay(1);
         var end = month.atEndOfMonth();
         var salaryPeriods = List.of(new PersonnelPayrollInput.SalaryPeriod(start, end, new BigDecimal("3000.00")));
         var contracts = List.of("001", "002").stream().map(registration ->
-            new PersonnelPayrollInput.Contract(UUID.randomUUID(), UUID.randomUUID(), "Employee " + registration,
+            new PersonnelPayrollInput.Contract(UUID.randomUUID(), UUID.randomUUID(), employeeNamePrefix + " " + registration,
                 registration, start, null, start, end, 200, salaryPeriods)).toList();
         when(personnelClient.getPayrollInputs(companyId, month))
             .thenReturn(new PersonnelPayrollInput(companyId, month, contracts));
