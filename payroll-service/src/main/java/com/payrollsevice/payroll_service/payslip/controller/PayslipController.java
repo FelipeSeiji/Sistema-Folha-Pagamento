@@ -38,8 +38,10 @@ public class PayslipController {
     private final PayslipService service;
 
     @PostMapping
-    public ResponseEntity<PayslipDtos.Response> create(@Valid @RequestBody PayslipDtos.Request request) {
-        var created = service.create(request);
+    public ResponseEntity<PayslipDtos.Response> create(
+        @Valid @RequestBody PayslipDtos.Request request, @AuthenticationPrincipal Jwt principal
+    ) {
+        var created = service.create(request, principal);
         URI location = ServletUriComponentsBuilder.fromCurrentRequestUri()
             .path("/{id}")
             .buildAndExpand(created.id())
@@ -56,8 +58,11 @@ public class PayslipController {
     }
 
     @PutMapping("/{id}")
-    public PayslipDtos.Response update(@PathVariable("id") UUID id, @Valid @RequestBody PayslipDtos.Request request) {
-        return service.update(id, request);
+    public PayslipDtos.Response update(
+        @PathVariable("id") UUID id, @Valid @RequestBody PayslipDtos.Request request,
+        @AuthenticationPrincipal Jwt principal
+    ) {
+        return service.update(id, request, principal);
     }
 
     @GetMapping("/{id}")
@@ -84,8 +89,8 @@ public class PayslipController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") UUID id) {
-        service.delete(id);
+    public ResponseEntity<Void> delete(@PathVariable("id") UUID id, @AuthenticationPrincipal Jwt principal) {
+        service.delete(id, principal);
         return ResponseEntity.noContent().build();
     }
 }

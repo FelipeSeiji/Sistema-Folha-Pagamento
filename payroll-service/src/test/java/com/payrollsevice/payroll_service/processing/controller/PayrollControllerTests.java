@@ -253,7 +253,7 @@ class PayrollControllerTests {
         var request = new PayslipDtos.Request(fixture.payrollId(), fixture.secondContractId(),
             new BigDecimal("2500.00"), List.of(new PayslipDtos.ItemRequest(
                 fixture.request().salaryRubricId(), null, new BigDecimal("2500.00"))));
-        var manual = client().post().uri("/payslip").body(request)
+        var manual = financeClient(fixture.payrollId()).post().uri("/payslip").body(request)
             .retrieve().body(PayslipDtos.Response.class);
 
         assertThat(calculateStatus(fixture)).isEqualTo(409);
