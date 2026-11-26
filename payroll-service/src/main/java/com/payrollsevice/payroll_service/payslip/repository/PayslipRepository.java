@@ -17,6 +17,9 @@ import jakarta.persistence.LockModeType;
 public interface PayslipRepository extends JpaRepository<Payslip, UUID> {
     List<Payslip> findByPayrollId(UUID payrollId);
 
+    @Query("select p.id from Payslip p where p.payroll.id = :payrollId")
+    List<UUID> findIdsByPayrollId(@Param("payrollId") UUID payrollId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Payslip> findForUpdateById(UUID id);
 
