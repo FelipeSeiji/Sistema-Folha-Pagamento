@@ -31,6 +31,8 @@ import com.payrollsevice.payroll_service.attendanceSummary.dto.AttendanceSummary
 import com.payrollsevice.payroll_service.outbox.model.PayrollClosedMessage;
 import com.payrollsevice.payroll_service.outbox.model.PayrollOutboxEvent;
 import com.payrollsevice.payroll_service.outbox.repository.PayrollOutboxRepository;
+import com.payrollsevice.payroll_service.payslip.document.PayslipDocumentRepository;
+import com.payrollsevice.payroll_service.payslip.document.PayslipDocumentWorker;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.payslip.model.Payslip;
 import com.payrollsevice.payroll_service.payslip.repository.PayslipRepository;
@@ -76,6 +78,12 @@ class PayrollControllerTests {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private PayslipDocumentWorker documentWorker;
+
+    @Autowired
+    private PayslipDocumentRepository documents;
 
     @Test
     void createsAndReadsDraftWithPersistedSnapshot() {
@@ -342,6 +350,31 @@ class PayrollControllerTests {
         assertThat(body.totalEarnings()).isEqualByComparingTo("6000.00");
         assertThat(body.totalDeductions()).isEqualByComparingTo("0.00");
         assertThat(body.netPay()).isEqualByComparingTo("6000.00");
+    }
+
+    @Test
+    void generatesOnePdfAfterAStorageFailureAndRedelivery() {
+        var fixture = prepareCalculation();
+        assertThat(calculateStatus(fixture)).isEqualTo(200);
+        client().post().uri("/payroll/{id}/close", fixture.payrollId()).retrieve().toBodilessEntity();
+        UUID payslipId = payslipRepository.findIdsByPayrollId(fixture.payrollId()).getFirst();
+
+        jdbc.execute("ALTER TABLE tb_payslip_document ADD CONSTRAINT ck_test_reject_document "
+            + "CHECK (payslip_id <> CAST('" + payslipId + "' AS UUID))");
+        try {
+            assertThatThrownBy(() -> documentWorker.generate(payslipId.toString()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+            assertThat(documents.findById(payslipId)).isEmpty();
+        } finally {
+            jdbc.execute("ALTER TABLE tb_payslip_document DROP CONSTRAINT ck_test_reject_document");
+        }
+
+        documentWorker.generate(payslipId.toString());
+        var pdf = documents.findById(payslipId).orElseThrow().getPdf();
+        assertThat(new String(pdf, java.nio.charset.StandardCharsets.US_ASCII)).startsWith("%PDF-");
+
+        documentWorker.generate(payslipId.toString());
+        assertThat(documents.findById(payslipId).orElseThrow().getPdf()).isEqualTo(pdf);
     }
 
     private static List<Integer> runConcurrently(Callable<Integer> request) throws Exception {

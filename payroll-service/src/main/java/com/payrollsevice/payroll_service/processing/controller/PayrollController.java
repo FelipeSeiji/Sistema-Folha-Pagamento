@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.payrollsevice.payroll_service.payslip.document.PayslipDocumentDispatcher;
 import com.payrollsevice.payroll_service.payslip.dto.PayslipDtos;
 import com.payrollsevice.payroll_service.processing.dto.PayrollDtos;
 import com.payrollsevice.payroll_service.processing.service.PayrollService;
@@ -33,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 public class PayrollController {
     private final PayrollService payrollService;
     private final RegularPayrollCalculator calculator;
+    private final PayslipDocumentDispatcher documents;
 
     @PostMapping
     public ResponseEntity<PayrollDtos.Response> create(@Valid @RequestBody PayrollDtos.CreateRequest request) {
@@ -66,6 +68,12 @@ public class PayrollController {
     @PostMapping("/{id}/close")
     public PayrollDtos.Response close(@PathVariable("id") UUID id) {
         return payrollService.close(id);
+    }
+
+    @PostMapping("/{id}/payslip-documents")
+    public ResponseEntity<Void> enqueuePayslipDocuments(@PathVariable("id") UUID id) {
+        documents.enqueue(id);
+        return ResponseEntity.accepted().build();
     }
 
     @GetMapping("/{id}/summary")
