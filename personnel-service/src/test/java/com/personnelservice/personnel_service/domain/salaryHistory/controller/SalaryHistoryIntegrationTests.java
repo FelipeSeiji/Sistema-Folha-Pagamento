@@ -131,6 +131,63 @@ class SalaryHistoryIntegrationTests {
         }
     }
 
+    @Test
+    void rejectsFinanceUserForAuthorizedCompany() throws Exception {
+        UUID company = UUID.randomUUID();
+        UUID employee = UUID.randomUUID();
+        UUID department = UUID.randomUUID();
+        UUID position = UUID.randomUUID();
+        UUID contract = UUID.randomUUID();
+        UUID history = UUID.randomUUID();
+        String prefix = String.format(Locale.ROOT, "%08d", ThreadLocalRandom.current().nextInt(100_000_000));
+        when(decoder.decode("finance-token")).thenReturn(financeJwt(company));
+
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            jdbc.update("INSERT INTO tb_company (id, cnpj, legal_name) VALUES (?, ?, ?)",
+                company, prefix + "F00142", "Test Company");
+            jdbc.update("INSERT INTO tb_department (id, name, company_id) VALUES (?, ?, ?)",
+                department, "People", company);
+            jdbc.update("INSERT INTO tb_employee (id, cpf, name, email) VALUES (?, ?, ?, ?)",
+                employee, prefix + "654", "Test Employee", "finance@example.test");
+            jdbc.update("INSERT INTO tb_job_position (id, name) VALUES (?, ?)", position, "Analyst");
+            jdbc.update("""
+                INSERT INTO tb_employment_contract
+                    (id, employee_id, company_id, department_id, job_position_id, registration_number,
+                     hire_date, monthly_work_hours)
+                VALUES (?, ?, ?, ?, ?, 'FIN-01', DATE '2025-12-01', 160)
+                """, contract, employee, company, department, position);
+            jdbc.update("""
+                INSERT INTO tb_salary_history (id, employment_contract_id, effective_from, salary)
+                VALUES (?, ?, DATE '2026-01-01', 5000.00)
+                """, history, contract);
+
+            assertThat(post(client, "/salary-history", """
+                {"contractId":"%s","effectiveFrom":"2025-12-01","effectiveUntil":"2025-12-31","salary":7000.00}
+                """.formatted(contract), "finance-token").statusCode()).isEqualTo(403);
+            assertThat(client.send(HttpRequest.newBuilder(uri("/salary-history/" + history))
+                .timeout(Duration.ofSeconds(10))
+                .header("Authorization", "Bearer finance-token")
+                .build(), HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(403);
+            assertThat(post(client, "/salary-history/contract/" + contract + "/change", """
+                {"effectiveFrom":"2026-02-01","salary":7000.00}
+                """, "finance-token").statusCode()).isEqualTo(403);
+
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tb_salary_history WHERE employment_contract_id = ?",
+                Long.class, contract)).isEqualTo(1L);
+            assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM tb_salary_history
+                WHERE id = ? AND employment_contract_id = ? AND salary = 5000.00 AND effective_until IS NULL
+                """, Long.class, history, contract)).isEqualTo(1L);
+        } finally {
+            jdbc.update("DELETE FROM tb_salary_history WHERE employment_contract_id = ?", contract);
+            jdbc.update("DELETE FROM tb_employment_contract WHERE id = ?", contract);
+            jdbc.update("DELETE FROM tb_job_position WHERE id = ?", position);
+            jdbc.update("DELETE FROM tb_department WHERE id = ?", department);
+            jdbc.update("DELETE FROM tb_employee WHERE id = ?", employee);
+            jdbc.update("DELETE FROM tb_company WHERE id = ?", company);
+        }
+    }
+
 
     private UUID verifyCreatedAndReadable(HttpClient client, HttpResponse<String> created, String path, String value)
             throws Exception {
@@ -167,6 +224,14 @@ class SalaryHistoryIntegrationTests {
         return Jwt.withTokenValue("hr-token")
             .header("alg", "none")
             .claim("realm_access", Map.of("roles", List.of("HR")))
+            .claim("company_ids", List.of(companyId.toString()))
+            .build();
+    }
+
+    private static Jwt financeJwt(UUID companyId) {
+        return Jwt.withTokenValue("finance-token")
+            .header("alg", "RS256")
+            .claim("realm_access", Map.of("roles", List.of("FINANCE")))
             .claim("company_ids", List.of(companyId.toString()))
             .build();
     }
