@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -15,6 +16,7 @@ import com.personnelservice.personnel_service.domain.employmentContract.reposito
 import com.personnelservice.personnel_service.domain.salaryHistory.dto.SalaryHistoryDtos;
 import com.personnelservice.personnel_service.domain.salaryHistory.model.SalaryHistory;
 import com.personnelservice.personnel_service.domain.salaryHistory.repository.SalaryHistoryRepository;
+import com.personnelservice.personnel_service.security.PersonnelCompanyAccess;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -28,8 +30,9 @@ public class SalaryHistoryService {
     private final EmploymentContractRepository employmentContractRepository;
 
     @Transactional
-    public SalaryHistoryDtos.Response create(@NotNull @Valid SalaryHistoryDtos.Request request) {
+    public SalaryHistoryDtos.Response create(Jwt principal, @NotNull @Valid SalaryHistoryDtos.Request request) {
         var contract = lockContract(request.contractId());
+        PersonnelCompanyAccess.require(principal, contract.getCompany().getId());
         var start = request.effectiveFrom();
         var end = request.effectiveUntil();
         if (end != null && end.isBefore(start)) {
@@ -47,8 +50,13 @@ public class SalaryHistoryService {
     }
 
     @Transactional
-    public SalaryHistoryDtos.Response change(UUID contractId, @NotNull @Valid SalaryHistoryDtos.ChangeRequest request) {
+    public SalaryHistoryDtos.Response change(
+        Jwt principal,
+        UUID contractId,
+        @NotNull @Valid SalaryHistoryDtos.ChangeRequest request
+    ) {
         var contract = lockContract(contractId);
+        PersonnelCompanyAccess.require(principal, contract.getCompany().getId());
         var start = request.effectiveFrom();
         var end = contract.getTerminationDate();
         requireContractPeriod(contract, start, end);
@@ -95,9 +103,10 @@ public class SalaryHistoryService {
     }
 
     @Transactional(readOnly = true)
-    public SalaryHistoryDtos.Response findById(UUID id) {
-        return salaryHistoryRepository.findById(id)
-            .map(SalaryHistoryDtos.Response::from)
+    public SalaryHistoryDtos.Response findById(Jwt principal, UUID id) {
+        var history = salaryHistoryRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Salary history not found."));
+        PersonnelCompanyAccess.require(principal, history.getContract().getCompany().getId());
+        return SalaryHistoryDtos.Response.from(history);
     }
 }

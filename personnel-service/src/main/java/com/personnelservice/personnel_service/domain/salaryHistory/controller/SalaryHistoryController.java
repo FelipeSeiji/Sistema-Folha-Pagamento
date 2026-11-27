@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,8 +27,11 @@ public class SalaryHistoryController {
     private final SalaryHistoryService salaryHistoryService;
 
     @PostMapping
-    public ResponseEntity<SalaryHistoryDtos.Response> create(@Valid @RequestBody SalaryHistoryDtos.Request request) {
-        SalaryHistoryDtos.Response salaryHistory = salaryHistoryService.create(request);
+    public ResponseEntity<SalaryHistoryDtos.Response> create(
+        @AuthenticationPrincipal Jwt principal,
+        @Valid @RequestBody SalaryHistoryDtos.Request request
+    ) {
+        SalaryHistoryDtos.Response salaryHistory = salaryHistoryService.create(principal, request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequestUri()
             .path("/{id}")
             .buildAndExpand(salaryHistory.id())
@@ -37,10 +42,11 @@ public class SalaryHistoryController {
 
     @PostMapping("/contract/{contractId}/change")
     public ResponseEntity<SalaryHistoryDtos.Response> change(
+        @AuthenticationPrincipal Jwt principal,
         @PathVariable("contractId") UUID contractId,
         @Valid @RequestBody SalaryHistoryDtos.ChangeRequest request
     ) {
-        var history = salaryHistoryService.change(contractId, request);
+        var history = salaryHistoryService.change(principal, contractId, request);
         URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
             .path("/salary-history/{id}")
             .buildAndExpand(history.id())
@@ -49,7 +55,10 @@ public class SalaryHistoryController {
     }
 
     @GetMapping("/{id}")
-    public SalaryHistoryDtos.Response findById(@PathVariable("id") UUID id) {
-        return salaryHistoryService.findById(id);
+    public SalaryHistoryDtos.Response findById(
+        @AuthenticationPrincipal Jwt principal,
+        @PathVariable("id") UUID id
+    ) {
+        return salaryHistoryService.findById(principal, id);
     }
 }
