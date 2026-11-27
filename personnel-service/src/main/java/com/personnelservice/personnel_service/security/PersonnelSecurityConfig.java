@@ -34,7 +34,8 @@ public class PersonnelSecurityConfig {
             .authorizeHttpRequests(requests -> requests
                 .requestMatchers("/internal/payroll-input", "/internal/employment-contract/{id}/company")
                 .hasAuthority("SCOPE_personnel.payroll.read")
-                .requestMatchers("/employment-contract", "/employment-contract/**").hasRole("HR")
+                .requestMatchers("/employment-contract", "/employment-contract/**", "/salary-history", "/salary-history/**")
+                .hasRole("HR")
                 .anyRequest().permitAll())
             .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(personnelAuthorities())))
             .build();
